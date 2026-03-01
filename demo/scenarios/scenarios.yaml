@@ -1,0 +1,119 @@
+# TheNightOps Demo Scenarios
+# Each scenario defines a failure condition and the expected agent behaviour.
+
+scenarios:
+  memory-leak:
+    name: "Memory Leak → OOMKill"
+    description: |
+      A recent deployment introduced a memory leak in the demo-api service.
+      Pods gradually consume more memory until they hit their 256Mi limit
+      and are OOMKilled by Kubernetes. The pods restart but immediately
+      begin leaking again, creating a CrashLoopBackOff pattern.
+    trigger:
+      type: k8s_patch
+      manifest: ../k8s_manifests/memory-leak-scenario.yaml
+    expected_findings:
+      - "OOMKilled events detected"
+      - "Memory usage trending upward"
+      - "Recent deployment changed image tag to v2-leaky"
+      - "Restart count increasing"
+    expected_root_cause: |
+      Memory leak in demo-api v2-leaky causing OOMKill. The leak was
+      introduced in the latest deployment which changed the container
+      image version.
+    expected_remediation:
+      - "Rollback deployment to previous version"
+      - "Investigate memory leak in v2-leaky image"
+    pagerduty_alert:
+      title: "HIGH: demo-api pods OOMKilled in nightops-demo namespace"
+      severity: high
+      description: |
+        Multiple pods in the demo-api deployment are being OOMKilled.
+        Restart count is increasing. Service availability degraded.
+
+  cpu-spike:
+    name: "CPU Spike from Bad Query"
+    description: |
+      A specific API endpoint (/api/reports/generate) is consuming
+      excessive CPU, causing high latency across all endpoints due to
+      CPU throttling. The issue was introduced in a recent code change.
+    trigger:
+      type: k8s_patch
+      manifest: ../k8s_manifests/cpu-spike-scenario.yaml
+    expected_findings:
+      - "CPU usage at limits for demo-api pods"
+      - "High latency on all endpoints"
+      - "Error logs showing CPU spike on /api/reports/generate"
+      - "Recent deployment changed FAILURE_MODE"
+    expected_root_cause: |
+      CPU-intensive computation in /api/reports/generate endpoint
+      consuming all available CPU, causing throttling and timeout
+      errors across the service.
+    expected_remediation:
+      - "Rate limit or disable the /api/reports/generate endpoint"
+      - "Increase CPU limits or add horizontal pod autoscaling"
+    pagerduty_alert:
+      title: "HIGH: demo-api high latency and timeouts"
+      severity: high
+      description: |
+        demo-api service experiencing high latency (>10s) on all endpoints.
+        CPU usage at 100% across all pods.
+
+  cascading-failure:
+    name: "Database Connection Pool Exhaustion"
+    description: |
+      The database connection pool is exhausted, causing the /api/users
+      endpoint to hang. This cascades to other services waiting for
+      user data, creating a broader outage.
+    trigger:
+      type: env_patch
+      deployment: demo-api
+      namespace: nightops-demo
+      env:
+        FAILURE_MODE: "cascading-failure"
+    expected_findings:
+      - "504 Gateway Timeout errors"
+      - "Database connection timeout logs"
+      - "Multiple services affected downstream"
+    expected_root_cause: |
+      Database connection pool exhaustion in demo-api causing
+      cascading timeouts across dependent services.
+    expected_remediation:
+      - "Restart affected pods to reset connection pool"
+      - "Investigate connection pool sizing and leak"
+      - "Add circuit breaker for database calls"
+    pagerduty_alert:
+      title: "CRITICAL: Cascading failure across multiple services"
+      severity: critical
+      description: |
+        Multiple services experiencing 504 errors. Root appears to be
+        database connectivity issues in demo-api.
+
+  config-drift:
+    name: "Bad ConfigMap Causing 5xx Errors"
+    description: |
+      A misconfigured ConfigMap is causing 50% of requests to fail
+      with 500 errors. The config was changed 15 minutes ago.
+    trigger:
+      type: env_patch
+      deployment: demo-api
+      namespace: nightops-demo
+      env:
+        FAILURE_MODE: "none"
+        ERROR_RATE_PERCENT: "50"
+    expected_findings:
+      - "50% error rate on /api/data endpoint"
+      - "Error rate spike correlates with recent config change"
+      - "Logs show simulated errors"
+    expected_root_cause: |
+      ConfigMap change set ERROR_RATE_PERCENT to 50, causing half of
+      all requests to /api/data to return 500 errors.
+    expected_remediation:
+      - "Revert the ConfigMap change"
+      - "Add validation for configuration values"
+    pagerduty_alert:
+      title: "HIGH: demo-api 50% error rate on /api/data"
+      severity: high
+      description: |
+        demo-api service returning 500 errors on 50% of requests to
+        /api/data endpoint. Started 15 minutes ago.

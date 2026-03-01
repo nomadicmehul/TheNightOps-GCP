@@ -1,0 +1,140 @@
+---
+# TheNightOps Demo Application
+# A simple Go/Python web service that can be configured to simulate various failure modes
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nightops-demo
+  labels:
+    app.kubernetes.io/part-of: thenightops
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-api
+  namespace: nightops-demo
+  labels:
+    app: demo-api
+    version: v1
+    app.kubernetes.io/part-of: thenightops
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: demo-api
+  template:
+    metadata:
+      labels:
+        app: demo-api
+        version: v1
+    spec:
+      containers:
+        - name: demo-api
+          image: DEMO_IMAGE
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: FAILURE_MODE
+              value: "none"  # Options: none, memory-leak, cpu-spike, error-rate
+            - name: LEAK_RATE_MB
+              value: "10"
+            - name: ERROR_RATE_PERCENT
+              value: "0"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-api
+  namespace: nightops-demo
+spec:
+  selector:
+    app: demo-api
+  ports:
+    - port: 80
+      targetPort: 8080
+      name: http
+  type: ClusterIP
+---
+# Backend database simulation (will be used for connection pool exhaustion scenario)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-db
+  namespace: nightops-demo
+  labels:
+    app: demo-db
+    app.kubernetes.io/part-of: thenightops
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: demo-db
+  template:
+    metadata:
+      labels:
+        app: demo-db
+    spec:
+      containers:
+        - name: demo-db
+          image: postgres:15-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: nightops_demo
+            - name: POSTGRES_USER
+              value: demo
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: demo-db-creds
+                  key: password
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: demo-db-creds
+  namespace: nightops-demo
+type: Opaque
+stringData:
+  password: nightops-demo-password
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-db
+  namespace: nightops-demo
+spec:
+  selector:
+    app: demo-db
+  ports:
+    - port: 5432
+      targetPort: 5432
+  type: ClusterIP

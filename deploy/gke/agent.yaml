@@ -1,0 +1,166 @@
+# TheNightOps Agent — Autonomous Watch Mode
+# Runs: webhook receiver + K8s event watcher + proactive checks
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nightops-agent
+  namespace: nightops
+  labels:
+    app.kubernetes.io/part-of: thenightops
+    app.kubernetes.io/component: agent
+  annotations:
+    # Uncomment for Workload Identity (recommended for production):
+    # iam.gke.io/gcp-service-account: thenightops-agent@YOUR_PROJECT_ID.iam.gserviceaccount.com
+    {}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: nightops-agent
+  labels:
+    app.kubernetes.io/part-of: thenightops
+rules:
+  # Read-only access to pods, deployments, events (for investigation)
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "events", "services", "configmaps", "namespaces"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+    verbs: ["get", "list", "watch"]
+  # Limited write for remediation (restart pods, scale deployments)
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["delete"]  # pod restart = delete + let controller recreate
+  - apiGroups: ["apps"]
+    resources: ["deployments/scale"]
+    verbs: ["get", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: nightops-agent
+  labels:
+    app.kubernetes.io/part-of: thenightops
+subjects:
+  - kind: ServiceAccount
+    name: nightops-agent
+    namespace: nightops
+roleRef:
+  kind: ClusterRole
+  name: nightops-agent
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nightops-data
+  namespace: nightops
+  labels:
+    app.kubernetes.io/part-of: thenightops
+    app.kubernetes.io/component: agent
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: standard-rwo
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nightops-agent
+  namespace: nightops
+  labels:
+    app.kubernetes.io/name: nightops-agent
+    app.kubernetes.io/part-of: thenightops
+    app.kubernetes.io/component: agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nightops-agent
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: nightops-agent
+        app.kubernetes.io/part-of: thenightops
+        app.kubernetes.io/component: agent
+    spec:
+      serviceAccountName: nightops-agent
+      containers:
+        - name: agent
+          image: AGENT_IMAGE  # Replaced by deploy script or kustomize
+          command: ["python", "-m", "thenightops.cli", "agent", "watch"]
+          ports:
+            - name: webhook
+              containerPort: 8090
+              protocol: TCP
+          envFrom:
+            - secretRef:
+                name: nightops-secrets
+          env:
+            - name: NIGHTOPS_KUBERNETES_HOST
+              value: mcp-kubernetes
+            - name: NIGHTOPS_CLOUD_LOGGING_HOST
+              value: mcp-cloud-logging
+            - name: NIGHTOPS_SLACK_HOST
+              value: mcp-slack
+            - name: NIGHTOPS_NOTIFICATIONS_HOST
+              value: mcp-notifications
+            - name: NIGHTOPS_DASHBOARD_URL
+              value: http://nightops-dashboard:8888
+          volumeMounts:
+            - name: config
+              mountPath: /app/config/nightops.yaml
+              subPath: nightops.yaml
+            - name: config
+              mountPath: /app/config/remediation_policies.yaml
+              subPath: remediation_policies.yaml
+            - name: data
+              mountPath: /app/data
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          livenessProbe:
+            httpGet:
+              path: /api/v1/webhooks/health
+              port: webhook
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /api/v1/webhooks/health
+              port: webhook
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: config
+          configMap:
+            name: nightops-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: nightops-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nightops-webhook
+  namespace: nightops
+  labels:
+    app.kubernetes.io/name: nightops-agent
+    app.kubernetes.io/part-of: thenightops
+    app.kubernetes.io/component: webhook
+spec:
+  selector:
+    app.kubernetes.io/name: nightops-agent
+  ports:
+    - name: webhook
+      port: 8090
+      targetPort: webhook
+  type: ClusterIP

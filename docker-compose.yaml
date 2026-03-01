@@ -1,0 +1,132 @@
+# TheNightOps — Docker Compose for Local Development
+#
+# Architecture:
+#   - Google Cloud MCP servers (Cloud Observability, GKE) are REMOTE/MANAGED
+#   - Grafana MCP (mcp-grafana) runs as STDIO subprocess inside the agent container
+#   - Custom MCP servers (Slack, Notifications) run LOCALLY via SSE
+#
+# New in v0.2:
+#   - webhook-receiver: Autonomous mode with webhook ingestion + event watcher
+#   - nightops-data volume: Persists incident memory and metrics across restarts
+
+services:
+  # ── Custom MCP Servers (self-hosted via SSE) ─────────────────
+
+  mcp-kubernetes:
+    build: .
+    entrypoint: ["python", "-m"]
+    command: ["thenightops.mcp_servers.kubernetes.server"]
+    ports:
+      - "8002:8002"
+    env_file: config/.env
+    volumes:
+      - ${HOME}/.config/gcloud:/app/.config/gcloud:ro
+      - /tmp/nightops-kubeconfig:/app/.kube/config:ro
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/.config/gcloud/application_default_credentials.json
+      - KUBECONFIG=/app/.kube/config
+    restart: unless-stopped
+
+  mcp-cloud-logging:
+    build: .
+    entrypoint: ["python", "-m"]
+    command: ["thenightops.mcp_servers.cloud_logging.server"]
+    ports:
+      - "8001:8001"
+    env_file: config/.env
+    volumes:
+      - ${HOME}/.config/gcloud:/app/.config/gcloud:ro
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/.config/gcloud/application_default_credentials.json
+    restart: unless-stopped
+
+  mcp-slack:
+    build: .
+    entrypoint: ["python", "-m"]
+    command: ["thenightops.mcp_servers.slack.server"]
+    ports:
+      - "8004:8004"
+    env_file: config/.env
+    restart: unless-stopped
+
+  mcp-notifications:
+    build: .
+    entrypoint: ["python", "-m"]
+    command: ["thenightops.mcp_servers.notifications.server"]
+    ports:
+      - "8005:8005"
+    env_file: config/.env
+    restart: unless-stopped
+
+  # ── Investigation Dashboard ────────────────────────────────
+
+  dashboard:
+    build: .
+    command: ["dashboard", "--no-open", "--port", "8888"]
+    ports:
+      - "8888:8888"
+    env_file: config/.env
+    restart: unless-stopped
+
+  # ── Autonomous Watch Mode ──────────────────────────────────
+  # Webhook receiver + K8s event watcher + proactive checks
+  # Configure alert sources to POST to:
+  #   http://<host>:8090/api/v1/webhooks/{grafana,alertmanager,pagerduty}
+
+  webhook-receiver:
+    build: .
+    command: ["agent", "watch"]
+    ports:
+      - "8090:8090"
+    env_file: config/.env
+    environment:
+      - NIGHTOPS_KUBERNETES_HOST=mcp-kubernetes
+      - NIGHTOPS_CLOUD_LOGGING_HOST=mcp-cloud-logging
+      - NIGHTOPS_SLACK_HOST=mcp-slack
+      - NIGHTOPS_NOTIFICATIONS_HOST=mcp-notifications
+      - NIGHTOPS_DASHBOARD_URL=http://dashboard:8888
+      - GRAFANA_URL=${GRAFANA_URL:-http://host.docker.internal:3000}
+      - GRAFANA_SERVICE_ACCOUNT_TOKEN=${GRAFANA_SERVICE_ACCOUNT_TOKEN}
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/.config/gcloud/application_default_credentials.json
+    volumes:
+      - ${HOME}/.config/gcloud:/app/.config/gcloud:ro
+      - nightops-data:/app/data
+    depends_on:
+      - mcp-kubernetes
+      - mcp-cloud-logging
+      - mcp-slack
+      - mcp-notifications
+      - dashboard
+    restart: unless-stopped
+
+  # ── Agent (interactive mode) ────────────────────────────────
+
+  agent:
+    build: .
+    command: ["agent", "run", "--interactive"]
+    env_file: config/.env
+    environment:
+      - NIGHTOPS_KUBERNETES_HOST=mcp-kubernetes
+      - NIGHTOPS_CLOUD_LOGGING_HOST=mcp-cloud-logging
+      - NIGHTOPS_SLACK_HOST=mcp-slack
+      - NIGHTOPS_NOTIFICATIONS_HOST=mcp-notifications
+      - NIGHTOPS_DASHBOARD_URL=http://dashboard:8888
+      - GRAFANA_URL=${GRAFANA_URL:-http://host.docker.internal:3000}
+      - GRAFANA_SERVICE_ACCOUNT_TOKEN=${GRAFANA_SERVICE_ACCOUNT_TOKEN}
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/.config/gcloud/application_default_credentials.json
+    volumes:
+      - ${HOME}/.config/gcloud:/app/.config/gcloud:ro
+      - nightops-data:/app/data
+    depends_on:
+      - mcp-kubernetes
+      - mcp-cloud-logging
+      - mcp-slack
+      - mcp-notifications
+    stdin_open: true
+    tty: true
+    profiles:
+      - interactive
+
+volumes:
+  nightops-data:
+    driver: local

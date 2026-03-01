@@ -1,0 +1,92 @@
+# TheNightOps — Cloud Build Pipeline
+#
+# Builds the agent image, pushes to Artifact Registry, deploys to GKE.
+#
+# Usage:
+#   gcloud builds submit --config cloudbuild.yaml \
+#     --substitutions=_CLUSTER_NAME=my-cluster,_CLUSTER_LOCATION=us-central1-b
+#
+# Required substitutions:
+#   _CLUSTER_NAME     — GKE cluster name
+#   _CLUSTER_LOCATION — GKE cluster zone/region
+#
+# Required IAM roles on Cloud Build service account:
+#   - roles/artifactregistry.writer
+#   - roles/container.developer
+#   - roles/logging.logWriter
+
+substitutions:
+  _CLUSTER_NAME: ""
+  _CLUSTER_LOCATION: "us-central1-b"
+  _REGION: "us-central1"
+  _REPO: "thenightops"
+
+steps:
+  # Step 1: Create Artifact Registry repo (idempotent)
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: bash
+    args:
+      - "-c"
+      - |
+        gcloud artifacts repositories describe ${_REPO} \
+          --location=${_REGION} --project=$PROJECT_ID 2>/dev/null \
+        || gcloud artifacts repositories create ${_REPO} \
+          --repository-format=docker \
+          --location=${_REGION} \
+          --project=$PROJECT_ID \
+          --description="TheNightOps container images"
+
+  # Step 2: Build the agent image
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "build"
+      - "-t"
+      - "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/nightops-agent:$SHORT_SHA"
+      - "-t"
+      - "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/nightops-agent:latest"
+      - "."
+
+  # Step 3: Push the image
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "push"
+      - "--all-tags"
+      - "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/nightops-agent"
+
+  # Step 4: Get GKE credentials
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: bash
+    args:
+      - "-c"
+      - |
+        gcloud container clusters get-credentials ${_CLUSTER_NAME} \
+          --zone=${_CLUSTER_LOCATION} \
+          --project=$PROJECT_ID
+
+  # Step 5: Deploy to GKE (replace image placeholder)
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: bash
+    args:
+      - "-c"
+      - |
+        export IMAGE="${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/nightops-agent:$SHORT_SHA"
+
+        # Apply namespace and config
+        kubectl apply -f deploy/gke/namespace.yaml
+        kubectl apply -f deploy/gke/configmap.yaml
+
+        # Deploy with image substitution
+        for f in deploy/gke/agent.yaml deploy/gke/mcp-servers.yaml deploy/gke/dashboard.yaml; do
+          sed "s|AGENT_IMAGE|$IMAGE|g" "$f" | kubectl apply -f -
+        done
+
+        # Wait for rollout
+        kubectl rollout status deployment/nightops-agent -n nightops --timeout=120s
+        echo "Deployment complete: $IMAGE"
+
+images:
+  - "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/nightops-agent:$SHORT_SHA"
+  - "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/nightops-agent:latest"
+
+options:
+  logging: CLOUD_LOGGING_ONLY

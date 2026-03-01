@@ -1,0 +1,224 @@
+# TheNightOps Custom MCP Servers
+# Runs: Kubernetes, Cloud Logging, Slack, Notifications MCP servers
+
+---
+# ── Kubernetes MCP Server ────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp-kubernetes
+  namespace: nightops
+  labels:
+    app.kubernetes.io/name: mcp-kubernetes
+    app.kubernetes.io/part-of: thenightops
+    app.kubernetes.io/component: mcp-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mcp-kubernetes
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mcp-kubernetes
+        app.kubernetes.io/part-of: thenightops
+        app.kubernetes.io/component: mcp-server
+    spec:
+      serviceAccountName: nightops-agent
+      containers:
+        - name: mcp-kubernetes
+          image: AGENT_IMAGE
+          command: ["python", "-m", "thenightops.mcp_servers.kubernetes.server"]
+          ports:
+            - containerPort: 8002
+          envFrom:
+            - secretRef:
+                name: nightops-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-kubernetes
+  namespace: nightops
+  labels:
+    app.kubernetes.io/name: mcp-kubernetes
+    app.kubernetes.io/part-of: thenightops
+spec:
+  selector:
+    app.kubernetes.io/name: mcp-kubernetes
+  ports:
+    - port: 8002
+      targetPort: 8002
+
+---
+# ── Cloud Logging MCP Server ────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp-cloud-logging
+  namespace: nightops
+  labels:
+    app.kubernetes.io/name: mcp-cloud-logging
+    app.kubernetes.io/part-of: thenightops
+    app.kubernetes.io/component: mcp-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mcp-cloud-logging
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mcp-cloud-logging
+        app.kubernetes.io/part-of: thenightops
+        app.kubernetes.io/component: mcp-server
+    spec:
+      serviceAccountName: nightops-agent
+      containers:
+        - name: mcp-cloud-logging
+          image: AGENT_IMAGE
+          command: ["python", "-m", "thenightops.mcp_servers.cloud_logging.server"]
+          ports:
+            - containerPort: 8001
+          envFrom:
+            - secretRef:
+                name: nightops-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-cloud-logging
+  namespace: nightops
+  labels:
+    app.kubernetes.io/name: mcp-cloud-logging
+    app.kubernetes.io/part-of: thenightops
+spec:
+  selector:
+    app.kubernetes.io/name: mcp-cloud-logging
+  ports:
+    - port: 8001
+      targetPort: 8001
+
+---
+# ── Slack MCP Server ────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp-slack
+  namespace: nightops
+  labels:
+    app.kubernetes.io/name: mcp-slack
+    app.kubernetes.io/part-of: thenightops
+    app.kubernetes.io/component: mcp-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mcp-slack
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mcp-slack
+        app.kubernetes.io/part-of: thenightops
+        app.kubernetes.io/component: mcp-server
+    spec:
+      containers:
+        - name: mcp-slack
+          image: AGENT_IMAGE
+          command: ["python", "-m", "thenightops.mcp_servers.slack.server"]
+          ports:
+            - containerPort: 8004
+          envFrom:
+            - secretRef:
+                name: nightops-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-slack
+  namespace: nightops
+  labels:
+    app.kubernetes.io/name: mcp-slack
+    app.kubernetes.io/part-of: thenightops
+spec:
+  selector:
+    app.kubernetes.io/name: mcp-slack
+  ports:
+    - port: 8004
+      targetPort: 8004
+
+---
+# ── Notifications MCP Server ────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp-notifications
+  namespace: nightops
+  labels:
+    app.kubernetes.io/name: mcp-notifications
+    app.kubernetes.io/part-of: thenightops
+    app.kubernetes.io/component: mcp-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mcp-notifications
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mcp-notifications
+        app.kubernetes.io/part-of: thenightops
+        app.kubernetes.io/component: mcp-server
+    spec:
+      containers:
+        - name: mcp-notifications
+          image: AGENT_IMAGE
+          command: ["python", "-m", "thenightops.mcp_servers.notifications.server"]
+          ports:
+            - containerPort: 8005
+          envFrom:
+            - secretRef:
+                name: nightops-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-notifications
+  namespace: nightops
+  labels:
+    app.kubernetes.io/name: mcp-notifications
+    app.kubernetes.io/part-of: thenightops
+spec:
+  selector:
+    app.kubernetes.io/name: mcp-notifications
+  ports:
+    - port: 8005
+      targetPort: 8005

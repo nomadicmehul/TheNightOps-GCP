@@ -1,0 +1,63 @@
+# TheNightOps Investigation Dashboard
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nightops-dashboard
+  namespace: nightops
+  labels:
+    app.kubernetes.io/name: nightops-dashboard
+    app.kubernetes.io/part-of: thenightops
+    app.kubernetes.io/component: dashboard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nightops-dashboard
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: nightops-dashboard
+        app.kubernetes.io/part-of: thenightops
+        app.kubernetes.io/component: dashboard
+    spec:
+      containers:
+        - name: dashboard
+          image: AGENT_IMAGE
+          command: ["python", "-m", "thenightops.cli", "dashboard", "--no-open", "--port", "8888"]
+          ports:
+            - name: http
+              containerPort: 8888
+          envFrom:
+            - secretRef:
+                name: nightops-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nightops-dashboard
+  namespace: nightops
+  labels:
+    app.kubernetes.io/name: nightops-dashboard
+    app.kubernetes.io/part-of: thenightops
+spec:
+  selector:
+    app.kubernetes.io/name: nightops-dashboard
+  ports:
+    - name: http
+      port: 8888
+      targetPort: http
+  type: ClusterIP

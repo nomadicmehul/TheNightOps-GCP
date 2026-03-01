@@ -1,0 +1,58 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment and secrets
+.env
+config/.env
+*.key
+*.pem
+service-account*.json
+
+# Generated K8s manifests (contain real secrets)
+deploy/generated/
+
+# Runtime data (incident memory, metrics)
+data/
+
+# Claude Code (local settings, session transcripts)
+.claude/
+
+# Docker Desktop config
+.docker/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# MyPy
+.mypy_cache/
+
+# Ruff
+.ruff_cache/
+
+# Logs
+*.log

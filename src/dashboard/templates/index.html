@@ -1,0 +1,1404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TheNightOps — Investigation Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #0d1117;
+            --bg-secondary: #161b22;
+            --border-color: #30363d;
+            --text-primary: #c9d1d9;
+            --text-secondary: #8b949e;
+            --accent-cyan: #58a6ff;
+            --success-green: #3fb950;
+            --warning-yellow: #d29922;
+            --error-red: #f85149;
+            --phase-height: 40px;
+            --transition-time: 0.3s;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            overflow: hidden;
+        }
+
+        /* Header */
+        .header {
+            background-color: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            height: 60px;
+        }
+
+        .header-title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 18px;
+            font-weight: 600;
+            letter-spacing: -0.5px;
+        }
+
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: var(--error-red);
+            transition: background-color var(--transition-time);
+        }
+
+        .status-indicator.connected {
+            background-color: var(--success-green);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Main container */
+        .container {
+            display: flex;
+            height: calc(100vh - 60px);
+            gap: 0;
+        }
+
+        /* Left panel */
+        .left-panel {
+            width: 30%;
+            background-color: var(--bg-secondary);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .panel-header {
+            padding: 16px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .panel-title {
+            font-size: 14px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-secondary);
+        }
+
+        .btn {
+            padding: 8px 12px;
+            border: 1px solid var(--border-color);
+            background-color: transparent;
+            color: var(--accent-cyan);
+            font-size: 12px;
+            font-weight: 600;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all var(--transition-time);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .btn:hover {
+            background-color: var(--accent-cyan);
+            color: var(--bg-primary);
+            border-color: var(--accent-cyan);
+        }
+
+        .investigations-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0;
+        }
+
+        .investigation-item {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border-color);
+            cursor: pointer;
+            transition: background-color var(--transition-time);
+            border-left: 3px solid transparent;
+        }
+
+        .investigation-item:hover {
+            background-color: var(--border-color);
+        }
+
+        .investigation-item.active {
+            background-color: var(--border-color);
+            border-left-color: var(--accent-cyan);
+        }
+
+        .inv-item-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+
+        .inv-item-title {
+            font-size: 13px;
+            font-weight: 500;
+            flex: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .status-badge {
+            font-size: 10px;
+            font-weight: 600;
+            padding: 2px 8px;
+            border-radius: 3px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            white-space: nowrap;
+        }
+
+        .status-badge.pending {
+            background-color: rgba(139, 148, 158, 0.2);
+            color: var(--text-secondary);
+        }
+
+        .status-badge.in_progress {
+            background-color: rgba(88, 166, 255, 0.2);
+            color: var(--accent-cyan);
+        }
+
+        .status-badge.completed {
+            background-color: rgba(63, 185, 80, 0.2);
+            color: var(--success-green);
+        }
+
+        .status-badge.failed {
+            background-color: rgba(248, 81, 73, 0.2);
+            color: var(--error-red);
+        }
+
+        .severity-badge {
+            font-size: 10px;
+            font-weight: 600;
+            padding: 2px 6px;
+            border-radius: 3px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .severity-badge.critical {
+            background-color: rgba(248, 81, 73, 0.2);
+            color: var(--error-red);
+        }
+
+        .severity-badge.high {
+            background-color: rgba(210, 153, 34, 0.2);
+            color: var(--warning-yellow);
+        }
+
+        .severity-badge.medium {
+            background-color: rgba(88, 166, 255, 0.2);
+            color: var(--accent-cyan);
+        }
+
+        .severity-badge.low {
+            background-color: rgba(139, 148, 158, 0.2);
+            color: var(--text-secondary);
+        }
+
+        .inv-item-timestamp {
+            font-size: 11px;
+            color: var(--text-secondary);
+        }
+
+        /* Right panel */
+        .right-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .panel-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px;
+        }
+
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: var(--text-secondary);
+            text-align: center;
+        }
+
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        .empty-state-text {
+            font-size: 14px;
+        }
+
+        /* Investigation detail */
+        .investigation-detail {
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        .investigation-header {
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 20px;
+        }
+
+        .header-row {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+
+        .header-col {
+            flex: 1;
+        }
+
+        .header-label {
+            font-size: 12px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+            font-weight: 600;
+        }
+
+        .header-value {
+            font-size: 14px;
+            color: var(--text-primary);
+            line-height: 1.5;
+        }
+
+        .duration-timer {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--accent-cyan);
+            font-family: 'Courier New', monospace;
+        }
+
+        /* Phase indicator */
+        .phase-indicator {
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 20px;
+        }
+
+        .phase-title {
+            font-size: 12px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 12px;
+            font-weight: 600;
+        }
+
+        .phase-bar {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .phase-step {
+            flex: 1;
+            height: var(--phase-height);
+            background-color: var(--border-color);
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            transition: all var(--transition-time);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .phase-step.active {
+            background-color: var(--accent-cyan);
+            color: var(--bg-primary);
+            box-shadow: 0 0 12px rgba(88, 166, 255, 0.4);
+        }
+
+        .phase-step.completed {
+            background-color: var(--success-green);
+            color: var(--bg-primary);
+        }
+
+        .phase-arrow {
+            font-size: 16px;
+            color: var(--text-secondary);
+            flex-shrink: 0;
+        }
+
+        .phase-arrow:last-child {
+            display: none;
+        }
+
+        /* Timeline */
+        .timeline-section {
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 20px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .section-title {
+            font-size: 12px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 12px;
+            font-weight: 600;
+        }
+
+        .timeline {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .timeline-event {
+            padding: 10px;
+            border-left: 2px solid var(--border-color);
+            padding-left: 14px;
+            font-size: 12px;
+            display: flex;
+            gap: 8px;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .timeline-event.agent-delegated {
+            border-left-color: var(--accent-cyan);
+        }
+
+        .timeline-event.tool-called {
+            border-left-color: var(--warning-yellow);
+        }
+
+        .timeline-event.finding-added {
+            border-left-color: var(--error-red);
+            background-color: rgba(248, 81, 73, 0.05);
+        }
+
+        .timeline-event.phase-changed {
+            border-left-color: var(--success-green);
+            background-color: rgba(63, 185, 80, 0.05);
+        }
+
+        .timeline-event.investigation-completed {
+            border-left-color: var(--success-green);
+            background-color: rgba(63, 185, 80, 0.05);
+        }
+
+        .timeline-timestamp {
+            color: var(--text-secondary);
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        .timeline-badge {
+            background-color: var(--border-color);
+            color: var(--accent-cyan);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        .timeline-badge.log_analyst {
+            background-color: rgba(88, 166, 255, 0.2);
+            color: var(--accent-cyan);
+        }
+
+        .timeline-badge.deployment_correlator {
+            background-color: rgba(210, 153, 34, 0.2);
+            color: var(--warning-yellow);
+        }
+
+        .timeline-badge.runbook_retriever {
+            background-color: rgba(63, 185, 80, 0.2);
+            color: var(--success-green);
+        }
+
+        .timeline-badge.communication_drafter {
+            background-color: rgba(139, 148, 158, 0.2);
+            color: var(--text-secondary);
+        }
+
+        .timeline-badge.system {
+            background-color: rgba(139, 148, 158, 0.1);
+            color: var(--text-secondary);
+        }
+
+        .timeline-description {
+            flex: 1;
+            color: var(--text-primary);
+            word-break: break-word;
+        }
+
+        /* Findings panel */
+        .findings-section {
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 20px;
+        }
+
+        .findings-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 12px;
+        }
+
+        .finding-card {
+            background-color: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 12px;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        .finding-card.pulse {
+            animation: pulse-card 0.6s ease-out;
+        }
+
+        @keyframes pulse-card {
+            0% {
+                box-shadow: 0 0 0 0 rgba(248, 81, 73, 0.4);
+            }
+            50% {
+                box-shadow: 0 0 0 8px rgba(248, 81, 73, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(248, 81, 73, 0);
+            }
+        }
+
+        .finding-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+
+        .finding-source {
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-secondary);
+        }
+
+        .finding-description {
+            font-size: 12px;
+            color: var(--text-primary);
+            line-height: 1.4;
+            margin-bottom: 8px;
+        }
+
+        .finding-timestamp {
+            font-size: 10px;
+            color: var(--text-secondary);
+            font-family: 'Courier New', monospace;
+        }
+
+        .no-findings {
+            text-align: center;
+            color: var(--text-secondary);
+            padding: 24px;
+            font-size: 12px;
+        }
+
+        /* RCA Summary */
+        .rca-section {
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 20px;
+        }
+
+        .rca-content {
+            background-color: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 16px;
+            font-size: 13px;
+            line-height: 1.6;
+            color: var(--text-primary);
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            min-height: 120px;
+        }
+
+        .rca-content.empty {
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Footer */
+        .footer {
+            background-color: var(--bg-secondary);
+            border-top: 1px solid var(--border-color);
+            padding: 12px 24px;
+            font-size: 11px;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            height: 40px;
+        }
+
+        /* Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-overlay.open {
+            display: flex;
+        }
+
+        .modal {
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 24px;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+        }
+
+        .modal-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: var(--text-primary);
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .form-label {
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-secondary);
+        }
+
+        .form-input,
+        .form-select {
+            padding: 10px;
+            background-color: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            border-radius: 4px;
+            font-size: 13px;
+            font-family: inherit;
+        }
+
+        .form-input:focus,
+        .form-select:focus {
+            outline: none;
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.1);
+        }
+
+        .form-textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 24px;
+        }
+
+        .btn-primary {
+            background-color: var(--accent-cyan);
+            color: var(--bg-primary);
+            border-color: var(--accent-cyan);
+            flex: 1;
+        }
+
+        .btn-primary:hover {
+            background-color: #4da3f5;
+        }
+
+        .btn-secondary {
+            flex: 1;
+        }
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background-color: var(--border-color);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background-color: #484f58;
+        }
+
+        /* Layout adjustments for better space usage */
+        .investigation-detail {
+            height: 100%;
+            display: grid;
+            grid-template-rows: auto auto 1fr auto;
+            gap: 16px;
+        }
+
+        .timeline-findings-wrapper {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            min-height: 0;
+            flex: 1;
+        }
+
+        .timeline-section {
+            min-height: 0;
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 1400px) {
+            .timeline-findings-wrapper {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 1024px) {
+            .container {
+                flex-direction: column;
+            }
+
+            .left-panel {
+                width: 100%;
+                border-right: none;
+                border-bottom: 1px solid var(--border-color);
+                max-height: 30vh;
+            }
+
+            .right-panel {
+                flex: 1;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-title">
+            <span>TheNightOps — Investigation Dashboard</span>
+        </div>
+        <div class="connection-status">
+            <span class="status-indicator" id="connectionStatus"></span>
+            <span id="connectionText">Connecting...</span>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Left Panel: Investigations List -->
+        <div class="left-panel">
+            <div class="panel-header">
+                <span class="panel-title">Investigations</span>
+                <button class="btn" id="newInvestigationBtn">+ New</button>
+            </div>
+            <div class="investigations-list" id="investigationsList">
+                <div class="investigation-item">
+                    <div style="text-align: center; color: var(--text-secondary); padding: 24px 16px; font-size: 12px;">
+                        No investigations yet
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Panel: Investigation Details -->
+        <div class="right-panel">
+            <div class="panel-content" id="panelContent">
+                <div class="empty-state">
+                    <div class="empty-state-icon">📋</div>
+                    <div class="empty-state-text">Select an investigation to view details</div>
+                </div>
+            </div>
+            <div class="footer">
+                <span>Connected clients: <strong id="clientCount">0</strong></span>
+                <span>Last update: <strong id="lastUpdate">—</strong></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- New Investigation Modal -->
+    <div class="modal-overlay" id="newInvestigationModal">
+        <div class="modal">
+            <div class="modal-title">Start New Investigation</div>
+            <form id="newInvestigationForm">
+                <div class="form-group">
+                    <label class="form-label">Incident Description</label>
+                    <textarea
+                        class="form-input form-textarea"
+                        id="incidentDescription"
+                        placeholder="Describe the incident or anomaly..."
+                        required
+                    ></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Severity Level</label>
+                    <select class="form-select" id="severityLevel">
+                        <option value="low">Low</option>
+                        <option value="medium" selected>Medium</option>
+                        <option value="high">High</option>
+                        <option value="critical">Critical</option>
+                    </select>
+                </div>
+                <div class="modal-actions">
+                    <button type="submit" class="btn btn-primary">Start Investigation</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // ==================== Global State ====================
+        const state = {
+            investigations: {},
+            selectedInvestigationId: null,
+            ws: null,
+            reconnectAttempts: 0,
+            maxReconnectAttempts: 10,
+            reconnectDelay: 1000,
+        };
+
+        // ==================== WebSocket Management ====================
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws`;
+
+            state.ws = new WebSocket(wsUrl);
+
+            state.ws.onopen = () => {
+                console.log('WebSocket connected');
+                updateConnectionStatus(true);
+                state.reconnectAttempts = 0;
+            };
+
+            state.ws.onmessage = (event) => {
+                const eventData = JSON.parse(event.data);
+                handleWebSocketEvent(eventData);
+            };
+
+            state.ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                updateConnectionStatus(false);
+            };
+
+            state.ws.onclose = () => {
+                console.log('WebSocket disconnected');
+                updateConnectionStatus(false);
+                scheduleReconnect();
+            };
+        }
+
+        function scheduleReconnect() {
+            if (state.reconnectAttempts < state.maxReconnectAttempts) {
+                state.reconnectAttempts++;
+                const delay = state.reconnectDelay * Math.pow(1.5, state.reconnectAttempts - 1);
+                setTimeout(connectWebSocket, Math.min(delay, 30000));
+            }
+        }
+
+        function updateConnectionStatus(connected) {
+            const indicator = document.getElementById('connectionStatus');
+            const text = document.getElementById('connectionText');
+
+            if (connected) {
+                indicator.classList.add('connected');
+                text.textContent = 'Connected';
+            } else {
+                indicator.classList.remove('connected');
+                text.textContent = 'Disconnected';
+            }
+        }
+
+        function sendWebSocketEvent(event) {
+            if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+                state.ws.send(JSON.stringify(event));
+            }
+        }
+
+        // ==================== Event Handling ====================
+        function handleWebSocketEvent(event) {
+            const type = event.type;
+            const investigationId = event.investigation_id;
+
+            updateLastUpdate();
+
+            switch (type) {
+                case 'investigation_started':
+                    handleInvestigationStarted(event);
+                    break;
+                case 'agent_delegated':
+                    handleAgentDelegated(event, investigationId);
+                    break;
+                case 'tool_called':
+                    handleToolCalled(event, investigationId);
+                    break;
+                case 'finding_added':
+                    handleFindingAdded(event, investigationId);
+                    break;
+                case 'phase_changed':
+                    handlePhaseChanged(event, investigationId);
+                    break;
+                case 'investigation_completed':
+                    handleInvestigationCompleted(event, investigationId);
+                    break;
+            }
+        }
+
+        function handleInvestigationStarted(event) {
+            const investigation = {
+                id: event.investigation_id,
+                incident_description: event.incident_description,
+                severity: event.severity,
+                status: 'in_progress',
+                started_at: event.timestamp,
+                completed_at: null,
+                current_phase: 1,
+                timeline: [],
+                findings: [],
+                agent_actions: [],
+                rca_summary: null,
+            };
+
+            state.investigations[investigation.id] = investigation;
+            renderInvestigationsList();
+
+            if (!state.selectedInvestigationId) {
+                selectInvestigation(investigation.id);
+            }
+        }
+
+        function handleAgentDelegated(event, investigationId) {
+            if (state.investigations[investigationId]) {
+                const timeline = state.investigations[investigationId].timeline;
+                timeline.push({
+                    timestamp: event.timestamp,
+                    agent: event.agent,
+                    event_type: 'agent_delegated',
+                    description: event.task || 'Task delegated',
+                    phase: null,
+                    tool_name: null,
+                });
+
+                if (state.selectedInvestigationId === investigationId) {
+                    renderTimeline(investigationId);
+                }
+            }
+        }
+
+        function handleToolCalled(event, investigationId) {
+            if (state.investigations[investigationId]) {
+                const timeline = state.investigations[investigationId].timeline;
+                timeline.push({
+                    timestamp: event.timestamp,
+                    agent: event.agent,
+                    event_type: 'tool_called',
+                    description: `Called ${event.tool_name}: ${event.tool_input || ''}`,
+                    phase: null,
+                    tool_name: event.tool_name,
+                });
+
+                if (state.selectedInvestigationId === investigationId) {
+                    renderTimeline(investigationId);
+                }
+            }
+        }
+
+        function handleFindingAdded(event, investigationId) {
+            if (state.investigations[investigationId]) {
+                const inv = state.investigations[investigationId];
+                inv.findings.push({
+                    id: event.finding_id || Math.random().toString(36).substr(2, 9),
+                    severity: event.severity || 'medium',
+                    source_agent: event.source_agent,
+                    description: event.description,
+                    timestamp: event.timestamp,
+                });
+
+                inv.timeline.push({
+                    timestamp: event.timestamp,
+                    agent: event.source_agent,
+                    event_type: 'finding_added',
+                    description: `Found: ${event.description}`,
+                    phase: null,
+                    tool_name: null,
+                });
+
+                if (state.selectedInvestigationId === investigationId) {
+                    renderFindings(investigationId);
+                    renderTimeline(investigationId);
+                }
+            }
+        }
+
+        function handlePhaseChanged(event, investigationId) {
+            if (state.investigations[investigationId]) {
+                const inv = state.investigations[investigationId];
+                inv.current_phase = event.phase;
+
+                inv.timeline.push({
+                    timestamp: event.timestamp,
+                    agent: 'system',
+                    event_type: 'phase_changed',
+                    description: `Progressed to Phase ${event.phase}`,
+                    phase: event.phase,
+                    tool_name: null,
+                });
+
+                if (state.selectedInvestigationId === investigationId) {
+                    renderPhaseIndicator(investigationId);
+                    renderTimeline(investigationId);
+                }
+            }
+        }
+
+        function handleInvestigationCompleted(event, investigationId) {
+            if (state.investigations[investigationId]) {
+                const inv = state.investigations[investigationId];
+                inv.status = event.status || 'completed';
+                inv.completed_at = event.timestamp;
+                if (event.rca_summary) {
+                    inv.rca_summary = event.rca_summary;
+                }
+
+                inv.timeline.push({
+                    timestamp: event.timestamp,
+                    agent: 'system',
+                    event_type: 'investigation_completed',
+                    description: `Investigation ${inv.status}`,
+                    phase: null,
+                    tool_name: null,
+                });
+
+                renderInvestigationsList();
+                if (state.selectedInvestigationId === investigationId) {
+                    renderInvestigationDetail(investigationId);
+                }
+            }
+        }
+
+        // ==================== Rendering ====================
+        function renderInvestigationsList() {
+            const list = document.getElementById('investigationsList');
+            const investigations = Object.values(state.investigations).sort((a, b) =>
+                new Date(b.started_at) - new Date(a.started_at)
+            );
+
+            if (investigations.length === 0) {
+                list.innerHTML = `
+                    <div class="investigation-item">
+                        <div style="text-align: center; color: var(--text-secondary); padding: 24px 16px; font-size: 12px;">
+                            No investigations yet
+                        </div>
+                    </div>
+                `;
+                return;
+            }
+
+            list.innerHTML = investigations.map(inv => {
+                const startTime = new Date(inv.started_at);
+                const timeStr = startTime.toLocaleTimeString();
+                const isActive = state.selectedInvestigationId === inv.id;
+
+                return `
+                    <div class="investigation-item ${isActive ? 'active' : ''}" onclick="selectInvestigation('${inv.id}')">
+                        <div class="inv-item-header">
+                            <div class="inv-item-title" title="${inv.incident_description}">
+                                ${inv.incident_description}
+                            </div>
+                            <span class="severity-badge ${inv.severity}">
+                                ${inv.severity}
+                            </span>
+                        </div>
+                        <div class="inv-item-header">
+                            <span class="status-badge ${inv.status}">
+                                ${inv.status.replace('_', ' ')}
+                            </span>
+                            <span class="inv-item-timestamp">${timeStr}</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function selectInvestigation(investigationId) {
+            state.selectedInvestigationId = investigationId;
+            renderInvestigationsList();
+            renderInvestigationDetail(investigationId);
+        }
+
+        function renderInvestigationDetail(investigationId) {
+            const inv = state.investigations[investigationId];
+            if (!inv) return;
+
+            const content = document.getElementById('panelContent');
+            const duration = calculateDuration(inv.started_at, inv.completed_at || new Date().toISOString());
+
+            content.innerHTML = `
+                <div class="investigation-detail">
+                    <div class="investigation-header">
+                        <div class="header-row">
+                            <div class="header-col">
+                                <div class="header-label">Incident Description</div>
+                                <div class="header-value">${escapeHtml(inv.incident_description)}</div>
+                            </div>
+                            <div style="display: flex; gap: 8px; flex-direction: column; align-items: flex-end;">
+                                <span class="severity-badge ${inv.severity}">
+                                    ${inv.severity}
+                                </span>
+                                <span class="status-badge ${inv.status}">
+                                    ${inv.status.replace('_', ' ')}
+                                </span>
+                            </div>
+                        </div>
+                        <div class="header-row">
+                            <div class="header-col">
+                                <div class="header-label">Duration</div>
+                                <div class="duration-timer" id="durationTimer">${duration}</div>
+                            </div>
+                            <div class="header-col">
+                                <div class="header-label">Started</div>
+                                <div class="header-value">${new Date(inv.started_at).toLocaleString()}</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="phase-indicator">
+                        <div class="phase-title">Investigation Phase</div>
+                        <div id="phaseBar" class="phase-bar"></div>
+                    </div>
+
+                    <div class="timeline-findings-wrapper">
+                        <div class="timeline-section">
+                            <div class="section-title">Timeline</div>
+                            <div class="timeline" id="timeline"></div>
+                        </div>
+                        <div class="findings-section">
+                            <div class="section-title">Findings</div>
+                            <div id="findings"></div>
+                        </div>
+                    </div>
+
+                    <div class="rca-section">
+                        <div class="section-title">Root Cause Analysis</div>
+                        <div class="rca-content" id="rcaSummary">
+                            <span style="color: var(--text-secondary);">Pending RCA summary...</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            renderPhaseIndicator(investigationId);
+            renderTimeline(investigationId);
+            renderFindings(investigationId);
+            renderRCASummary(investigationId);
+            startDurationTimer(investigationId);
+        }
+
+        function renderPhaseIndicator(investigationId) {
+            const inv = state.investigations[investigationId];
+            const phaseBar = document.getElementById('phaseBar');
+            const phases = [
+                { num: 1, label: 'Triage' },
+                { num: 2, label: 'Deep Investigation' },
+                { num: 3, label: 'Synthesis' },
+                { num: 4, label: 'Remediation' },
+            ];
+
+            let html = '';
+            phases.forEach((phase, idx) => {
+                const status = phase.num < inv.current_phase ? 'completed' : phase.num === inv.current_phase ? 'active' : '';
+                html += `<div class="phase-step ${status}">${phase.label}</div>`;
+                if (idx < phases.length - 1) {
+                    html += '<div class="phase-arrow">→</div>';
+                }
+            });
+
+            phaseBar.innerHTML = html;
+        }
+
+        function renderTimeline(investigationId) {
+            const inv = state.investigations[investigationId];
+            const timeline = document.getElementById('timeline');
+
+            if (!inv.timeline || inv.timeline.length === 0) {
+                timeline.innerHTML = '<div style="text-align: center; color: var(--text-secondary); padding: 24px 12px; font-size: 12px;">No events yet</div>';
+                return;
+            }
+
+            timeline.innerHTML = inv.timeline.map(event => {
+                const time = new Date(event.timestamp).toLocaleTimeString();
+                const eventClass = event.event_type.replace('_', '-');
+
+                return `
+                    <div class="timeline-event ${eventClass}">
+                        <span class="timeline-timestamp">${time}</span>
+                        <span class="timeline-badge ${event.agent}">${event.agent}</span>
+                        <span class="timeline-description">${escapeHtml(event.description)}</span>
+                    </div>
+                `;
+            }).join('');
+
+            // Auto-scroll to bottom
+            setTimeout(() => {
+                timeline.scrollTop = timeline.scrollHeight;
+            }, 0);
+        }
+
+        function renderFindings(investigationId) {
+            const inv = state.investigations[investigationId];
+            const findings = document.getElementById('findings');
+
+            if (!inv.findings || inv.findings.length === 0) {
+                findings.innerHTML = '<div class="no-findings">No findings yet</div>';
+                return;
+            }
+
+            findings.innerHTML = `
+                <div class="findings-grid">
+                    ${inv.findings.map(finding => {
+                        const time = new Date(finding.timestamp).toLocaleTimeString();
+                        return `
+                            <div class="finding-card pulse">
+                                <div class="finding-header">
+                                    <span class="severity-badge ${finding.severity}">
+                                        ${finding.severity}
+                                    </span>
+                                    <span class="finding-source">${finding.source_agent}</span>
+                                </div>
+                                <div class="finding-description">${escapeHtml(finding.description)}</div>
+                                <div class="finding-timestamp">${time}</div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
+        }
+
+        function renderRCASummary(investigationId) {
+            const inv = state.investigations[investigationId];
+            const rcaElement = document.getElementById('rcaSummary');
+
+            if (inv.rca_summary) {
+                rcaElement.innerHTML = `<pre>${escapeHtml(inv.rca_summary)}</pre>`;
+                rcaElement.classList.remove('empty');
+            } else {
+                rcaElement.innerHTML = '<span style="color: var(--text-secondary);">Pending RCA summary...</span>';
+                rcaElement.classList.add('empty');
+            }
+        }
+
+        function startDurationTimer(investigationId) {
+            const inv = state.investigations[investigationId];
+            const timerElement = document.getElementById('durationTimer');
+            if (!timerElement) return;
+
+            const updateTimer = () => {
+                const duration = calculateDuration(inv.started_at, inv.completed_at || new Date().toISOString());
+                timerElement.textContent = duration;
+            };
+
+            updateTimer();
+            setInterval(updateTimer, 1000);
+        }
+
+        function calculateDuration(startTime, endTime) {
+            const start = new Date(startTime);
+            const end = new Date(endTime);
+            const diffMs = end - start;
+            const diffSecs = Math.floor(diffMs / 1000);
+            const hours = Math.floor(diffSecs / 3600);
+            const minutes = Math.floor((diffSecs % 3600) / 60);
+            const seconds = diffSecs % 60;
+
+            if (hours > 0) {
+                return `${hours}h ${minutes}m ${seconds}s`;
+            } else if (minutes > 0) {
+                return `${minutes}m ${seconds}s`;
+            } else {
+                return `${seconds}s`;
+            }
+        }
+
+        // ==================== Modal Management ====================
+        function openNewInvestigationModal() {
+            document.getElementById('newInvestigationModal').classList.add('open');
+            document.getElementById('incidentDescription').focus();
+        }
+
+        function closeModal() {
+            document.getElementById('newInvestigationModal').classList.remove('open');
+        }
+
+        document.getElementById('newInvestigationBtn').addEventListener('click', openNewInvestigationModal);
+        document.getElementById('newInvestigationForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const description = document.getElementById('incidentDescription').value.trim();
+            const severity = document.getElementById('severityLevel').value;
+
+            if (!description) return;
+
+            try {
+                const response = await fetch('/api/investigations', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: `incident_description=${encodeURIComponent(description)}&severity=${encodeURIComponent(severity)}`,
+                });
+
+                if (response.ok) {
+                    closeModal();
+                    document.getElementById('incidentDescription').value = '';
+                    document.getElementById('severityLevel').value = 'medium';
+                }
+            } catch (error) {
+                console.error('Error creating investigation:', error);
+            }
+        });
+
+        // Close modal on backdrop click
+        document.getElementById('newInvestigationModal').addEventListener('click', (e) => {
+            if (e.target.id === 'newInvestigationModal') {
+                closeModal();
+            }
+        });
+
+        // ==================== Utility Functions ====================
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function updateLastUpdate() {
+            const now = new Date().toLocaleTimeString();
+            document.getElementById('lastUpdate').textContent = now;
+        }
+
+        // ==================== Initialization ====================
+        async function initDashboard() {
+            try {
+                const response = await fetch('/api/investigations');
+                const data = await response.json();
+                data.investigations.forEach(inv => {
+                    state.investigations[inv.id] = inv;
+                });
+                renderInvestigationsList();
+            } catch (error) {
+                console.error('Error loading investigations:', error);
+            }
+
+            connectWebSocket();
+        }
+
+        // Initialize on load
+        document.addEventListener('DOMContentLoaded', initDashboard);
+
+        // Clean up on unload
+        window.addEventListener('beforeunload', () => {
+            if (state.ws) {
+                state.ws.close();
+            }
+        });
+    </script>
+</body>
+</html>

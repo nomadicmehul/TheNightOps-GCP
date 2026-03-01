@@ -1,0 +1,43 @@
+---
+# CPU Spike Scenario
+# Patches the demo-api to simulate a CPU-intensive operation triggered by
+# a specific endpoint, causing high latency and potential timeouts.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-api
+  namespace: nightops-demo
+  annotations:
+    nightops.io/scenario: "cpu-spike"
+    nightops.io/description: "Simulates a CPU spike from a bad query"
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: demo-api
+  template:
+    metadata:
+      labels:
+        app: demo-api
+        version: v2-cpu
+        nightops.io/scenario: "cpu-spike"
+    spec:
+      containers:
+        - name: demo-api
+          image: DEMO_IMAGE
+          ports:
+            - containerPort: 8080
+          env:
+            - name: FAILURE_MODE
+              value: "cpu-spike"
+            - name: SPIKE_ENDPOINT
+              value: "/api/reports/generate"
+            - name: SPIKE_DURATION_SEC
+              value: "120"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi

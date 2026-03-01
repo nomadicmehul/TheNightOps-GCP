@@ -1,0 +1,41 @@
+---
+# Memory Leak Scenario
+# Patches the demo-api deployment to enable memory leak simulation.
+# The container will gradually consume memory until hitting its limit and being OOMKilled.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-api
+  namespace: nightops-demo
+  annotations:
+    nightops.io/scenario: "memory-leak"
+    nightops.io/description: "Simulates a memory leak causing OOMKill"
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: demo-api
+  template:
+    metadata:
+      labels:
+        app: demo-api
+        version: v2-leaky
+        nightops.io/scenario: "memory-leak"
+    spec:
+      containers:
+        - name: demo-api
+          image: DEMO_IMAGE
+          ports:
+            - containerPort: 8080
+          env:
+            - name: FAILURE_MODE
+              value: "memory-leak"
+            - name: LEAK_RATE_MB
+              value: "10"  # Leak 10MB per minute
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi  # Will OOMKill when leak exceeds this

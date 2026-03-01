@@ -1,0 +1,76 @@
+# TheNightOps Remediation Policies
+#
+# Graduated autonomy:
+#   Level 0 — Auto-approve: Safe, non-destructive actions
+#   Level 1 — Environment-gated: Auto in dev/staging, manual in production
+#   Level 2 — Always require approval: Risky but necessary actions
+#   Level 3 — Blocked: Never allowed, even with approval
+
+policies:
+  # ── Level 0: Auto-approve (all environments) ────────────────
+  silence_alert:
+    auto_approve_environments: ["*"]
+    blocked: false
+
+  create_grafana_incident:
+    auto_approve_environments: ["*"]
+    blocked: false
+
+  post_slack_update:
+    auto_approve_environments: ["*"]
+    conditions:
+      channels: ["#incidents"]
+    blocked: false
+
+  create_annotation:
+    auto_approve_environments: ["*"]
+    blocked: false
+
+  # ── Level 1: Environment-gated ──────────────────────────────
+  restart_pod:
+    auto_approve_environments: ["development", "staging"]
+    require_approval_environments: ["production"]
+    conditions:
+      max_restart_count: 3
+    blocked: false
+
+  scale_up:
+    auto_approve_environments: ["development", "staging"]
+    require_approval_environments: ["production"]
+    conditions:
+      max_replicas: 10
+    blocked: false
+
+  # ── Level 2: Always require approval ────────────────────────
+  rollback_deployment:
+    auto_approve_environments: []
+    require_approval_environments: ["*"]
+    blocked: false
+
+  scale_down:
+    auto_approve_environments: []
+    require_approval_environments: ["*"]
+    blocked: false
+
+  revert_configmap:
+    auto_approve_environments: []
+    require_approval_environments: ["*"]
+    blocked: false
+
+  send_external_notification:
+    auto_approve_environments: []
+    require_approval_environments: ["*"]
+    blocked: false
+
+  # ── Level 3: Blocked (never allowed) ────────────────────────
+  delete_namespace:
+    blocked: true
+
+  delete_pvc:
+    blocked: true
+
+  cluster_delete:
+    blocked: true
+
+  node_drain:
+    blocked: true
