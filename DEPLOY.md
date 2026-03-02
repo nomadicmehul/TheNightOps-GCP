@@ -284,6 +284,7 @@ This will:
 ./scripts/demo-gke.sh --skip-setup                  # Cluster already exists
 ./scripts/demo-gke.sh --skip-build                   # Images already pushed
 ./scripts/demo-gke.sh --skip-setup --skip-build      # Just deploy + trigger
+./scripts/demo-gke.sh --skip-setup --skip-build --scenario cpu-spike 
 ```
 
 ### During the Demo
