@@ -573,3 +573,5 @@ Apache 2.0 — See [LICENSE](LICENSE) for details.
 ---
 
 **Built by engineers who are tired of being tired.**
+
+Developed with ❤️ by **[Mehul Patel](https://nomadicmehul.dev/)** — for the love of DevOps, Cloud Native, and the Open Source community.

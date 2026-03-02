@@ -156,3 +156,7 @@ docker compose up -d
 - Use `mypy` for type checking (strict mode)
 - Follow existing patterns when adding new modules
 - Prefer editing existing files over creating new ones
+
+---
+
+Developed with ❤️ by **[Mehul Patel](https://nomadicmehul.dev/)** — for the love of DevOps, Cloud Native, and the Open Source community.
