@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -290,9 +291,16 @@ def verify(
         checks.append(("GCP Project ID", bool(config.cloud_observability.project_id), config.cloud_observability.project_id or "not set"))
         checks.append(("Cloud Observability MCP", config.cloud_observability.enabled, f"official ({config.cloud_observability.endpoint})"))
         checks.append(("GKE MCP", config.gke.enabled, f"official (cluster: {config.gke.cluster or 'not set'})"))
-        checks.append(("Grafana MCP", config.grafana.enabled, f"official ({config.grafana.url})"))
-        checks.append(("Grafana Token", bool(config.grafana.service_account_token), "configured" if config.grafana.service_account_token else "not set"))
-        checks.append(("Slack Bot Token", bool(config.slack.bot_token), "configured" if config.slack.bot_token else "not set"))
+        if config.grafana.enabled:
+            checks.append(("Grafana MCP", True, f"official ({config.grafana.url})"))
+            checks.append(("Grafana Token", bool(config.grafana.service_account_token), "configured" if config.grafana.service_account_token else "not set"))
+        else:
+            checks.append(("Grafana MCP", True, "disabled"))
+
+        if config.slack.enabled:
+            checks.append(("Slack Bot Token", bool(config.slack.bot_token), "configured" if config.slack.bot_token else "not set"))
+        else:
+            checks.append(("Slack Bot Token", True, "disabled"))
         checks.append(("Model", True, config.agent.model))
 
         # New capabilities
@@ -599,18 +607,30 @@ def demo_reset() -> None:
 def agent_run(
     interactive: bool = typer.Option(False, "--interactive", "-i", help="Interactive mode"),
     incident: Optional[str] = typer.Option(None, "--incident", help="Incident description"),
+    simple: bool = typer.Option(False, "--simple", "-s", help="Simple mode: single agent with kubectl tools (no MCP)"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output"),
     config_path: Optional[str] = typer.Option(None, "--config", "-c"),
 ) -> None:
-    """Run TheNightOps agent to investigate an incident."""
+    """Run TheNightOps agent to investigate an incident.
+
+    Use --simple for reliable single-agent mode (kubectl tools, no MCP dependency).
+    """
     if debug:
         logging.basicConfig(level=logging.DEBUG)
 
     print_banner()
     config = _load_config(config_path)
 
-    if interactive:
+    if simple:
+        if interactive:
+            _run_interactive(config, verbose, simple_mode=True)
+        elif incident:
+            asyncio.run(_run_simple_single_investigation(config, incident))
+        else:
+            rich_console.print("[yellow]Specify --interactive or --incident <description>[/yellow]")
+            raise typer.Exit(1)
+    elif interactive:
         _run_interactive(config, verbose)
     elif incident:
         asyncio.run(_run_single_investigation(config, incident))
@@ -621,10 +641,13 @@ def agent_run(
 
 @agent_app.command("watch")
 def agent_watch(
+    simple: bool = typer.Option(False, "--simple", "-s", help="Simple mode: single agent with kubectl tools (no MCP)"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
     config_path: Optional[str] = typer.Option(None, "--config", "-c"),
 ) -> None:
     """Start autonomous watch mode — webhooks + event watcher + proactive checks.
+
+    Use --simple for reliable single-agent mode (kubectl tools, no MCP dependency).
 
     This is the fully autonomous mode where TheNightOps:
     1. Listens for webhook alerts from Grafana/Alertmanager/PagerDuty
@@ -638,9 +661,11 @@ def agent_watch(
     print_banner()
     config = _load_config(config_path)
 
+    mode_label = "[bold yellow]Simple Mode (kubectl tools, no MCP)[/bold yellow]" if simple else "[bold]Autonomous Watch Mode[/bold]"
+
     rich_console.print(
         Panel(
-            "[bold]Autonomous Watch Mode[/bold]\n\n"
+            f"{mode_label}\n\n"
             f"Webhook receiver:  port {config.webhook.port} {'[green]enabled[/green]' if config.webhook.enabled else '[red]disabled[/red]'}\n"
             f"Event watcher:     {'[green]enabled[/green]' if config.event_watcher.enabled else '[red]disabled[/red]'} ({', '.join(config.event_watcher.namespaces)})\n"
             f"Proactive checks:  {'[green]enabled[/green]' if config.proactive.enabled else '[red]disabled[/red]'} (every {config.proactive.check_interval_seconds}s)\n"
@@ -652,16 +677,20 @@ def agent_watch(
         )
     )
 
-    asyncio.run(_run_watch_mode(config))
+    asyncio.run(_run_watch_mode(config, simple_mode=simple))
 
 
-async def _run_watch_mode(config: NightOpsConfig) -> None:
+async def _run_watch_mode(config: NightOpsConfig, simple_mode: bool = False) -> None:
     """Run the autonomous watch mode with all subsystems."""
     import os
     import uvicorn
 
     from thenightops.ingestion.deduplication import AlertDeduplicator
-    from thenightops.agents.root_orchestrator import run_investigation
+
+    if simple_mode:
+        from thenightops.agents.simple_agent import run_simple_investigation as _run_inv
+    else:
+        from thenightops.agents.root_orchestrator import run_investigation as _run_inv
 
     deduplicator = AlertDeduplicator(
         window_seconds=config.webhook.dedup_window_seconds,
@@ -675,21 +704,30 @@ async def _run_watch_mode(config: NightOpsConfig) -> None:
             f"  Source: {incident.source} | Severity: {incident.severity.value} | ID: {incident.id}"
         )
         try:
-            result = await run_investigation(
+            result = await _run_inv(
                 config,
                 incident.description,
                 dashboard_url=dashboard_url,
                 incident_id=incident.id,
             )
+            result_key = "result" if simple_mode else "investigation_result"
             rich_console.print(
                 Panel(
-                    result["investigation_result"][:2000],
+                    result[result_key][:2000],
                     title=f"Investigation Complete — {incident.id}",
                     style="green",
                 )
             )
         except Exception as e:
             rich_console.print(f"[red]Investigation failed for {incident.id}: {e}[/red]")
+            cause = e.__cause__ if e.__cause__ else e
+            if hasattr(cause, "exceptions"):
+                for i, sub_exc in enumerate(cause.exceptions, 1):
+                    rich_console.print(f"[red]  [{i}] {type(sub_exc).__name__}: {sub_exc}[/red]")
+            rich_console.print(
+                "[dim]Tip: Run with --debug for full error details. "
+                "Check GCP auth: gcloud auth application-default login[/dim]"
+            )
 
     tasks = []
 
@@ -744,17 +782,20 @@ async def _run_watch_mode(config: NightOpsConfig) -> None:
         rich_console.print("\n[yellow]Shutting down watch mode...[/yellow]")
 
 
-def _run_interactive(config: NightOpsConfig, verbose: bool = False) -> None:
+def _run_interactive(config: NightOpsConfig, verbose: bool = False, simple_mode: bool = False) -> None:
     """Run the agent in interactive mode."""
+    mode_label = "Simple Mode (kubectl)" if simple_mode else "Interactive Mode"
     rich_console.print(
         Panel(
-            "TheNightOps is running in interactive mode.\n"
+            f"TheNightOps is running in {mode_label.lower()}.\n"
             "Paste an incident description or Grafana alert to begin investigation.\n"
             "Type 'quit' to exit.",
-            title="Interactive Mode",
+            title=mode_label,
             style="cyan",
         )
     )
+
+    run_fn = _run_simple_single_investigation if simple_mode else _run_single_investigation
 
     while True:
         try:
@@ -769,11 +810,51 @@ def _run_interactive(config: NightOpsConfig, verbose: bool = False) -> None:
                 continue
 
             rich_console.print("\n[bold magenta]Starting investigation...[/bold magenta]\n")
-            asyncio.run(_run_single_investigation(config, user_input))
+            asyncio.run(run_fn(config, user_input))
 
         except (KeyboardInterrupt, EOFError):
             rich_console.print("\n[dim]Goodbye![/dim]")
             break
+
+
+async def _run_simple_single_investigation(
+    config: NightOpsConfig, incident_description: str,
+) -> None:
+    """Run a single investigation using simple mode (kubectl tools, no MCP)."""
+    import os
+    from thenightops.agents.simple_agent import run_simple_investigation
+
+    rich_console.print(
+        Panel(
+            f"[bold]Incident:[/bold] {incident_description[:200]}\n"
+            "[dim]Mode: Simple (kubectl tools, no MCP)[/dim]",
+            title="Simple Investigation Started",
+            style="yellow",
+        )
+    )
+
+    dashboard_url = os.getenv("NIGHTOPS_DASHBOARD_URL", "http://localhost:8888")
+
+    try:
+        result = await run_simple_investigation(
+            config, incident_description, dashboard_url=dashboard_url,
+        )
+
+        rich_console.print(
+            Panel(
+                result["result"],
+                title="Investigation Complete",
+                style="green",
+            )
+        )
+        rich_console.print(
+            f"[dim]Tools called: {result.get('tools_called', 0)} | "
+            f"Status: {result.get('status', 'unknown')}[/dim]"
+        )
+
+    except Exception as e:
+        rich_console.print(f"\n[red]Investigation failed: {e}[/red]")
+        rich_console.print("[dim]Tip: Ensure kubectl is configured and can reach your cluster.[/dim]")
 
 
 async def _run_single_investigation(config: NightOpsConfig, incident_description: str) -> None:
@@ -810,9 +891,15 @@ async def _run_single_investigation(config: NightOpsConfig, incident_description
 
     except Exception as e:
         rich_console.print(f"\n[red]Investigation failed: {e}[/red]")
-        if hasattr(e, "__traceback__"):
-            import traceback
-            traceback.print_exc()
+        # Show sub-exceptions from ExceptionGroup (MCP/TaskGroup errors)
+        cause = e.__cause__ if e.__cause__ else e
+        if hasattr(cause, "exceptions"):
+            for i, sub_exc in enumerate(cause.exceptions, 1):
+                rich_console.print(f"[red]  [{i}] {type(sub_exc).__name__}: {sub_exc}[/red]")
+        rich_console.print(
+            "[dim]Tip: Run with --debug for full error details. "
+            "Check GCP auth: gcloud auth application-default login[/dim]"
+        )
 
 
 # ── Entry Point ────────────────────────────────────────────────────

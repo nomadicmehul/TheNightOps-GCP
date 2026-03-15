@@ -70,11 +70,43 @@ The traditional answer has been more tooling, more dashboards, more alerting rul
 
 ## Architecture
 
-TheNightOps is built on two key open standards: [Google ADK](https://google.github.io/adk-python/) for multi-agent orchestration and [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) for tool integration.
+TheNightOps supports **two operating modes** — choose based on your environment:
+
+### Simple Mode (Recommended)
+
+Single-agent architecture using `kubectl` tools directly. Reliable, works with any Kubernetes cluster.
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│          TheNightOps Simple Agent (ADK + Gemini)              │
+│                                                              │
+│  ┌─────────────────────────────────────────────────────────┐ │
+│  │              Single SRE Investigator Agent                │ │
+│  │                                                         │ │
+│  │  Phase 1: Triage → Phase 2: Deep Investigation →        │ │
+│  │  Phase 3: Synthesis → Phase 4: Remediation              │ │
+│  └────────────────────────┬────────────────────────────────┘ │
+└───────────────────────────┼──────────────────────────────────┘
+                            │ subprocess calls
+    ┌───────────────────────┼───────────────────────┐
+    │                       │                       │
+┌───┴────────┐  ┌──────────┴──────┐  ┌─────────────┴──┐
+│  kubectl   │  │  kubectl logs   │  │  kubectl top    │
+│  get pods  │  │  kubectl desc   │  │  kubectl events │
+│  get deploy│  │  get yaml       │  │  rollout history│
+└────────────┘  └─────────────────┘  └────────────────┘
+            Any Kubernetes cluster (kubectl configured)
+```
+
+**Why Simple Mode?** The official GCP MCP servers are still in preview/beta and can be unreliable. Google ADK's internal `TaskGroup` can stall when MCP connections fail mid-investigation. Simple Mode bypasses all of this while still demonstrating the same ADK agent patterns (tool calling, structured investigation, phase tracking, dashboard integration) — just without the infrastructure fragility.
+
+### Full MCP Mode (Advanced)
+
+Multi-agent architecture using [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) for tool integration. More powerful but requires GCP MCP setup.
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                  TheNightOps Agent (ADK + Gemini 3.1 Pro)         │
+│                  TheNightOps Agent (ADK + Gemini)                 │
 │                                                                  │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────┐    │
 │  │   Log    │  │ Deploy   │  │ Runbook  │  │ Communication│    │
@@ -99,13 +131,17 @@ TheNightOps is built on two key open standards: [Google ADK](https://google.gith
          Official Google Cloud MCP (IAM auth, zero infrastructure)
 ```
 
-### Three Layers
+### Comparison
 
-| Layer | Role | Components |
-|-------|------|------------|
-| **MCP Tool Servers** | The "hands" | Official GKE MCP, Cloud Observability MCP, + custom Slack/Notifications (optional) |
-| **ADK Agent Orchestration** | The "brain" | Root Agent + 5 specialist sub-agents powered by Gemini 3.1 Pro |
-| **Human-in-the-Loop** | The "guardrails" | Approval required for destructive actions (restarts, rollbacks) |
+| | Simple Mode (`--simple`) | Full MCP Mode |
+|---|---|---|
+| **Tools** | `kubectl` subprocess calls | GCP MCP servers (beta) |
+| **Agents** | 1 single investigator | 6 (root + 5 sub-agents) |
+| **Dependencies** | `kubectl` + kubeconfig | GCP MCP, IAM, beta CLI |
+| **Reliability** | High (direct kubectl) | Can stall (MCP/TaskGroup issues) |
+| **Setup time** | 0 min (just kubectl) | 15-30 min (IAM, MCP enablement) |
+| **ADK patterns** | Single agent + function tools | Multi-agent orchestration + MCP |
+| **Dashboard** | Full support | Full support |
 
 ---
 
@@ -142,7 +178,24 @@ gcloud auth application-default login
 nightops verify
 ```
 
-### Run Locally
+### Simple Mode (Recommended First Test)
+
+The simplest and most reliable way to try TheNightOps. Uses `kubectl` subprocess calls instead of MCP — works with **any** Kubernetes cluster, no GCP MCP setup needed.
+
+```bash
+# Investigate a specific incident
+nightops agent run --simple --incident "Pod crashlooping in default namespace"
+
+# Interactive mode
+nightops agent run --simple --interactive
+
+# Autonomous watch mode (webhooks + event watcher + proactive checks)
+nightops agent watch --simple
+```
+
+> **Why Simple Mode?** The official GCP MCP servers (`container.googleapis.com/mcp`, `logging.googleapis.com/mcp`) are still in preview/beta and can be unreliable (see [Known Limitations](#known-limitations--status)). Google ADK's internal `TaskGroup` can also stall when MCP connections fail mid-investigation. Simple Mode bypasses all of this by talking directly to your cluster via `kubectl`, while still using ADK + Gemini for AI-powered reasoning. It demonstrates the same ADK agent patterns (tool calling, structured investigation, phase tracking) without the infrastructure fragility.
+
+### Run with MCP (Full Multi-Agent Mode)
 
 ```bash
 # One command to start everything (dashboard + agent with official GCP MCP)
@@ -391,12 +444,22 @@ nightops mcp status                        # Check all MCP server status
 nightops dashboard                         # Launch real-time investigation dashboard
 nightops dashboard --port 9000             # Custom port
 
-# Agent
+# Agent — Simple Mode (recommended, no MCP dependency)
+nightops agent run --simple --incident "pod OOMKilled"  # Direct investigation
+nightops agent run --simple --interactive  # Interactive mode
+nightops agent watch --simple              # Autonomous watch mode (kubectl tools)
+
+# Agent — Full MCP Mode (requires GCP MCP setup)
 nightops agent watch                       # Autonomous watch mode (production)
 nightops agent run --interactive           # Interactive investigation mode
 nightops agent run --incident "pod OOMKilled"  # Direct investigation
 
-# GKE Demo
+# Test All Scenarios
+bash scripts/test-scenarios.sh             # Run all 5 investigations + verify
+bash scripts/test-scenarios.sh --scenario 1  # Run specific scenario (1-5)
+bash scripts/test-scenarios.sh --verify-only # Just check cluster status
+
+# GKE Demo (Full MCP Mode)
 ./scripts/demo-gke.sh                     # Full GKE demo (setup + build + deploy)
 ./scripts/demo-gke.sh --scenario cpu-spike # Specific scenario
 ./scripts/demo-gke.sh --skip-setup --skip-build  # Quick redeploy
@@ -440,6 +503,43 @@ docker compose up -d
 - [ ] Auto-remediation with approval workflows
 - [ ] Multi-cluster support
 - [ ] Learning from past incidents to improve diagnosis accuracy
+
+---
+
+## Known Limitations & Status
+
+> **This project is a working proof-of-concept / reference architecture for Google ADK multi-agent systems.** The demo may not work end-to-end in all environments due to the factors below.
+
+### Google Cloud MCP (Preview)
+
+The official GCP MCP servers (`container.googleapis.com/mcp`, `logging.googleapis.com/mcp`) are in **preview/beta**. This means:
+
+- **MCP enablement requires beta CLI commands** (`gcloud beta services mcp enable ...`) which may not be available in all regions or for all project types.
+- **IAM role `roles/mcp.toolUser`** must be granted to both the service account (for GKE deployment) and your user account (for local development). The setup script (`scripts/setup-gke.sh`) handles this automatically, but manual verification may be needed.
+- MCP server availability and response times can vary — intermittent connection failures are expected during preview.
+
+### Google ADK Runtime
+
+ADK internally uses Python `TaskGroup` for concurrent MCP tool calls. When an MCP connection fails mid-investigation, this surfaces as an `ExceptionGroup` (Python 3.11+) which can be difficult to handle gracefully. Known impacts:
+
+- **Investigation may stall or fail** if MCP servers are unreachable or return errors. The dashboard will show the investigation stuck at "Triage" or "Deep Investigation" phase.
+- **Error recovery is best-effort** — the agent attempts to notify the dashboard of failures, but the original HTTP connection pool may be broken after a `TaskGroup` exception.
+- These are ADK framework-level behaviors, not application bugs. They will improve as ADK matures.
+
+### What Works Well
+
+- The **multi-agent architecture** (Root Orchestrator + 5 sub-agents) demonstrates ADK's orchestration capabilities effectively.
+- The **real-time dashboard** (WebSocket streaming, phase tracking, timeline, findings) works correctly.
+- **Webhook ingestion** (Grafana, Alertmanager, PagerDuty, generic) with deduplication works reliably.
+- The **incident memory** (TF-IDF similarity matching) and **remediation policy engine** work as designed.
+- The full flow (Triage -> Deep Investigation -> Synthesis -> Remediation -> Completed) works when MCP connections are stable.
+
+### Recommendations for Evaluation
+
+1. **Best first test**: Use Simple Mode — `nightops agent run --simple --incident "your incident"`. Works immediately with any kubectl-accessible cluster.
+2. **Run all scenarios**: `bash scripts/test-scenarios.sh` runs 5 incident investigations and verifies cluster state.
+3. **If you want full MCP**: Deploy to GKE with `./scripts/demo-gke.sh` — this sets up all IAM/MCP prerequisites automatically.
+4. **For ADK learning**: `src/agents/simple_agent.py` shows clean ADK function tool patterns; `src/agents/root_orchestrator.py` shows multi-agent orchestration with MCP.
 
 ---
 

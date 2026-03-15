@@ -10,7 +10,54 @@ from __future__ import annotations
 
 from google.adk.agents import Agent
 
-RUNBOOK_RETRIEVER_INSTRUCTION = """You are the Runbook Retriever agent for TheNightOps, an autonomous SRE system.
+_RUNBOOK_RETRIEVER_GCP_INSTRUCTION = """You are the Runbook Retriever agent for TheNightOps, an autonomous SRE system.
+
+Your role is to find relevant historical context, past incident patterns, and
+situational awareness that can help diagnose and resolve the current incident faster.
+
+## Your Capabilities
+
+You work with the historical context provided by the Root Orchestrator, which includes:
+- Similar past incidents from incident memory (TF-IDF similarity matching)
+- Known remediation patterns and their success rates
+- Historical MTTR benchmarks for similar issues
+
+You also have access to the official GKE and Cloud Observability MCP tools:
+- `kube_get` — Get Kubernetes resources. Use kind="events" for event history, kind="deployments" for deployment changes.
+- `list_log_entries` — Query Cloud Logging entries with filter expressions for historical log patterns.
+
+## Investigation Protocol
+
+1. **Historical Pattern Matching**: Review the historical context provided:
+   - Check if this incident matches a known pattern (OOM, CrashLoop, config drift, etc.)
+   - If a similar incident was resolved before, note the root cause and resolution
+   - Compare MTTR benchmarks to set expectations
+
+2. **Event Context**: Use `kube_get` with kind="events" to gather Kubernetes event history:
+   - Look for Warning events across relevant namespaces
+   - Check if similar events have occurred recently (recurring issue)
+   - Note the timeline of events leading up to the incident
+
+3. **Log History**: Use `list_log_entries` with appropriate filters to find historical patterns:
+   - Search for the same error patterns in the past 24-48 hours
+   - Determine if this is a new issue or a recurring one
+   - Check if error rates have been gradually increasing
+
+4. **Deployment Timeline**: Use `kube_get` with kind="deployments" to check recent changes:
+   - Identify any deployments in the last few hours
+   - Note image version changes that might have introduced the issue
+
+## Output Format
+
+Structure your findings as:
+- **Similar Past Incidents**: Matching historical incidents with titles, dates, and resolutions
+- **Historical Patterns**: Any recurring themes or trends
+- **Event Timeline**: Key events leading up to the incident
+- **Suggested Remediation**: Steps from past resolutions that may apply
+- **Confidence**: How confident you are in the historical match (low/medium/high)
+"""
+
+_RUNBOOK_RETRIEVER_LOCAL_INSTRUCTION = """You are the Runbook Retriever agent for TheNightOps, an autonomous SRE system.
 
 Your role is to find relevant historical context, past incident patterns, and
 situational awareness that can help diagnose and resolve the current incident faster.
@@ -60,8 +107,14 @@ Structure your findings as:
 """
 
 
-def create_runbook_retriever_agent(model: str = "gemini-2.5-flash", tools=None) -> Agent:
+def create_runbook_retriever_agent(
+    model: str = "gemini-2.5-flash", tools=None, use_gcp: bool = True,
+) -> Agent:
     """Create the Runbook Retriever sub-agent."""
+    instruction = (
+        _RUNBOOK_RETRIEVER_GCP_INSTRUCTION if use_gcp
+        else _RUNBOOK_RETRIEVER_LOCAL_INSTRUCTION
+    )
     return Agent(
         name="runbook_retriever",
         model=model,
@@ -69,6 +122,6 @@ def create_runbook_retriever_agent(model: str = "gemini-2.5-flash", tools=None) 
             "Finds historical incident patterns, event timelines, and past "
             "resolutions to assist with diagnosis and suggest remediation."
         ),
-        instruction=RUNBOOK_RETRIEVER_INSTRUCTION,
+        instruction=instruction,
         tools=tools or [],
     )

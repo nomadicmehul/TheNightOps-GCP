@@ -2,7 +2,7 @@
 # TheNightOps — GKE Cluster Setup Script
 #
 # Creates a GKE cluster with Workload Identity, configures IAM roles,
-# and prepares the cluster for TheNightOps agent deployment.
+# enables MCP servers, and prepares the cluster for TheNightOps agent deployment.
 #
 # Usage:
 #   export GCP_PROJECT_ID=my-project
@@ -48,6 +48,28 @@ gcloud services enable \
     iam.googleapis.com \
     --project="${PROJECT_ID}"
 echo "  ✓ APIs enabled"
+
+# ── Enable MCP for GKE and Cloud Logging ─────────────────────
+echo ""
+echo "→ Enabling MCP (Model Context Protocol) on GCP services..."
+
+# GKE MCP — required for the agent to query K8s resources via MCP
+echo "  Enabling GKE MCP (container.googleapis.com)..."
+if gcloud beta services mcp enable container.googleapis.com --project="${PROJECT_ID}" 2>/dev/null; then
+    echo "  ✓ GKE MCP enabled"
+else
+    echo "  ⚠ GKE MCP enable failed (may need 'gcloud components update' or beta access)"
+    echo "    Try manually: gcloud beta services mcp enable container.googleapis.com --project=${PROJECT_ID}"
+fi
+
+# Cloud Logging MCP — required for log analysis via MCP
+echo "  Enabling Cloud Logging MCP (logging.googleapis.com)..."
+if gcloud beta services mcp enable logging.googleapis.com --project="${PROJECT_ID}" 2>/dev/null; then
+    echo "  ✓ Cloud Logging MCP enabled"
+else
+    echo "  ⚠ Cloud Logging MCP enable failed"
+    echo "    Try manually: gcloud beta services mcp enable logging.googleapis.com --project=${PROJECT_ID}"
+fi
 
 # ── Create GKE Cluster with Workload Identity ─────────────────
 echo ""
@@ -99,6 +121,7 @@ ROLES=(
     "roles/monitoring.viewer"     # Read Cloud Monitoring
     "roles/container.viewer"      # Read GKE resources
     "roles/container.developer"   # Manage GKE workloads (for remediation)
+    "roles/mcp.toolUser"          # Access GCP MCP servers (GKE MCP, Logging MCP)
 )
 
 for role in "${ROLES[@]}"; do
@@ -134,6 +157,22 @@ kubectl annotate serviceaccount nightops-agent \
 
 echo "  ✓ Workload Identity bound: nightops/nightops-agent → ${SA_EMAIL}"
 
+# ── Grant MCP Role to Current User (for local development) ───
+echo ""
+echo "→ Granting MCP role to current user (for local run-local.sh)..."
+CURRENT_USER=$(gcloud config get-value account 2>/dev/null)
+if [[ -n "${CURRENT_USER}" ]]; then
+    gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
+        --member="user:${CURRENT_USER}" \
+        --role="roles/mcp.toolUser" \
+        --condition=None \
+        --quiet 2>/dev/null
+    echo "  ✓ roles/mcp.toolUser granted to ${CURRENT_USER}"
+else
+    echo "  ⚠ Could not determine current gcloud user"
+    echo "    Run manually: gcloud projects add-iam-policy-binding ${PROJECT_ID} --member=user:YOU@EMAIL --role=roles/mcp.toolUser"
+fi
+
 # ── Create Artifact Registry ──────────────────────────────────
 echo ""
 echo "→ Creating Artifact Registry repository..."
@@ -167,25 +206,23 @@ fi
 
 # ── Print Next Steps ──────────────────────────────────────────
 echo ""
-echo "╔══════════════════════════════════════════════════════════╗"
-echo "║                     Next Steps                           ║"
-echo "╠══════════════════════════════════════════════════════════╣"
-echo "║                                                          ║"
-echo "║  1. Ensure config/.env has your API keys, then:          ║"
-echo "║     ./scripts/generate-manifests.sh                      ║"
-echo "║     kubectl apply -f deploy/generated/                   ║"
-echo "║                                                          ║"
-echo "║  Or deploy via Cloud Build:                              ║"
-echo "║     gcloud builds submit --config cloudbuild.yaml \\      ║"
-echo "║       --substitutions=_CLUSTER_NAME=${CLUSTER_NAME},\\    ║"
-echo "║       _CLUSTER_LOCATION=${ZONE}                          ║"
-echo "║                                                          ║"
-echo "║  2. Access dashboard:                                    ║"
-echo "║     kubectl port-forward svc/nightops-dashboard \\        ║"
-echo "║       8888:8888 -n nightops                              ║"
-echo "║                                                          ║"
-echo "║  3. Send test webhook:                                   ║"
-echo "║     kubectl port-forward svc/nightops-webhook \\          ║"
-echo "║       8090:8090 -n nightops                              ║"
-echo "║                                                          ║"
-echo "╚══════════════════════════════════════════════════════════╝"
+echo "╔════════════════════════════════════════════════════════════╗"
+echo "║                      Next Steps                            ║"
+echo "╠════════════════════════════════════════════════════════════╣"
+echo "║                                                            ║"
+echo "║  Option A — Run locally (recommended for testing):         ║"
+echo "║    gcloud auth application-default login                   ║"
+echo "║    bash scripts/run-local.sh                               ║"
+echo "║    → Dashboard: http://localhost:8888                      ║"
+echo "║                                                            ║"
+echo "║  Option B — Deploy to GKE:                                 ║"
+echo "║    1. Ensure config/.env has your API keys                 ║"
+echo "║    2. ./scripts/generate-manifests.sh                      ║"
+echo "║    3. kubectl apply -f deploy/generated/                   ║"
+echo "║    4. kubectl port-forward svc/nightops-dashboard \        ║"
+echo "║         8888:8888 -n nightops                              ║"
+echo "║                                                            ║"
+echo "║  Option C — Full demo (cluster + demo app + incident):    ║"
+echo "║    ./scripts/demo-gke.sh --skip-setup                     ║"
+echo "║                                                            ║"
+echo "╚════════════════════════════════════════════════════════════╝"

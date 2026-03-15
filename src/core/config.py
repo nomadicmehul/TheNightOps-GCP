@@ -318,11 +318,34 @@ class NightOpsConfig(BaseSettings):
     metrics: MetricsConfig = Field(default_factory=MetricsConfig)
 
     @classmethod
+    def _load_env_file(cls, yaml_path: Path) -> None:
+        """Load config/.env into os.environ if not already set."""
+        env_file = yaml_path.parent / ".env"
+        if not env_file.exists():
+            return
+        with open(env_file) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key = key.strip()
+                value = value.strip()
+                # Don't override existing environment variables
+                if key not in os.environ:
+                    os.environ[key] = value
+
+    @classmethod
     def from_yaml(cls, path: str | Path) -> NightOpsConfig:
         """Load configuration from a YAML file with environment variable substitution."""
         path = Path(path)
         if not path.exists():
             raise FileNotFoundError(f"Configuration file not found: {path}")
+
+        # Load .env file from the same directory as the YAML config
+        cls._load_env_file(path)
 
         with open(path) as f:
             raw = f.read()

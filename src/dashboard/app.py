@@ -314,6 +314,7 @@ def create_app(port: int = 8888) -> FastAPI:
     jinja_env = Environment(
         loader=FileSystemLoader(str(template_dir)),
         autoescape=True,
+        auto_reload=True,
     )
 
     # Mount static files
@@ -419,9 +420,22 @@ def create_app(port: int = 8888) -> FastAPI:
                     event.get("agent", "thenightops"),
                     event.get("task", "")[:300],
                 )
+            elif event_type == EventType.PHASE_CHANGED.value:
+                phase = event.get("phase")
+                if phase is not None:
+                    app.investigation_store.update_phase(investigation_id, phase)
+                    app.investigation_store.add_timeline_event(
+                        investigation_id,
+                        "system",
+                        event_type,
+                        f"Progressed to Phase {phase}",
+                        phase=phase,
+                    )
             elif event_type == EventType.INVESTIGATION_COMPLETED.value:
                 status = event.get("status", "completed")
                 rca_summary = event.get("rca_summary", "")
+                # Mark phase 4 as complete
+                app.investigation_store.update_phase(investigation_id, 4)
                 app.investigation_store.update_status(
                     investigation_id,
                     InvestigationStatus(status),

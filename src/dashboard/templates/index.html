@@ -30,6 +30,7 @@
             background-color: var(--bg-primary);
             color: var(--text-primary);
             overflow: hidden;
+            height: 100vh;
         }
 
         /* Header */
@@ -246,7 +247,9 @@
         .panel-content {
             flex: 1;
             overflow-y: auto;
+            overflow-x: hidden;
             padding: 24px;
+            min-height: 0;
         }
 
         .empty-state {
@@ -292,6 +295,7 @@
 
         .header-col {
             flex: 1;
+            min-width: 0;
         }
 
         .header-label {
@@ -307,6 +311,8 @@
             font-size: 14px;
             color: var(--text-primary);
             line-height: 1.5;
+            word-break: break-word;
+            overflow-wrap: break-word;
         }
 
         .duration-timer {
@@ -335,24 +341,29 @@
 
         .phase-bar {
             display: flex;
-            gap: 12px;
+            gap: 8px;
             align-items: center;
+            width: 100%;
         }
 
         .phase-step {
-            flex: 1;
+            flex: 1 1 0;
+            min-width: 0;
             height: var(--phase-height);
             background-color: var(--border-color);
             border-radius: 4px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 600;
             color: var(--text-secondary);
             transition: all var(--transition-time);
             position: relative;
             overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+            padding: 0 4px;
         }
 
         .phase-step.active {
@@ -367,9 +378,9 @@
         }
 
         .phase-arrow {
-            font-size: 16px;
+            font-size: 14px;
             color: var(--text-secondary);
-            flex-shrink: 0;
+            flex: 0 0 auto;
         }
 
         .phase-arrow:last-child {
@@ -401,7 +412,7 @@
             overflow-y: auto;
             display: flex;
             flex-direction: column;
-            gap: 2px;
+            gap: 0;
         }
 
         .timeline-event {
@@ -411,7 +422,10 @@
             font-size: 12px;
             display: flex;
             gap: 8px;
+            align-items: flex-start;
             animation: slideIn 0.3s ease-out;
+            min-height: 0;
+            flex-shrink: 0;
         }
 
         @keyframes slideIn {
@@ -496,8 +510,10 @@
 
         .timeline-description {
             flex: 1;
+            min-width: 0;
             color: var(--text-primary);
             word-break: break-word;
+            overflow-wrap: break-word;
         }
 
         /* Findings panel */
@@ -506,11 +522,15 @@
             border: 1px solid var(--border-color);
             border-radius: 6px;
             padding: 20px;
+            overflow-y: auto;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
         }
 
         .findings-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            grid-template-columns: 1fr;
             gap: 12px;
         }
 
@@ -519,6 +539,7 @@
             border: 1px solid var(--border-color);
             border-radius: 4px;
             padding: 12px;
+            overflow: hidden;
             animation: slideIn 0.3s ease-out;
         }
 
@@ -558,6 +579,8 @@
             color: var(--text-primary);
             line-height: 1.4;
             margin-bottom: 8px;
+            word-break: break-word;
+            overflow-wrap: break-word;
         }
 
         .finding-timestamp {
@@ -591,7 +614,22 @@
             color: var(--text-primary);
             white-space: pre-wrap;
             word-wrap: break-word;
-            min-height: 120px;
+            word-break: break-word;
+            overflow-wrap: break-word;
+            overflow-y: auto;
+            max-height: 400px;
+            min-height: 80px;
+        }
+
+        .rca-content pre {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            word-break: break-word;
+            overflow-wrap: break-word;
+            margin: 0;
+            font-family: inherit;
+            font-size: inherit;
+            line-height: inherit;
         }
 
         .rca-content.empty {
@@ -733,6 +771,7 @@
             display: grid;
             grid-template-rows: auto auto 1fr auto;
             gap: 16px;
+            overflow: hidden;
         }
 
         .timeline-findings-wrapper {
@@ -740,11 +779,12 @@
             grid-template-columns: 1fr 1fr;
             gap: 16px;
             min-height: 0;
-            flex: 1;
+            overflow: hidden;
         }
 
         .timeline-section {
             min-height: 0;
+            overflow: hidden;
         }
 
         /* Responsive adjustments */
@@ -1054,6 +1094,7 @@
                 const inv = state.investigations[investigationId];
                 inv.status = event.status || 'completed';
                 inv.completed_at = event.timestamp;
+                inv.current_phase = 4;
                 if (event.rca_summary) {
                     inv.rca_summary = event.rca_summary;
                 }
@@ -1203,8 +1244,11 @@
             ];
 
             let html = '';
+            const isComplete = inv.status === 'completed';
             phases.forEach((phase, idx) => {
-                const status = phase.num < inv.current_phase ? 'completed' : phase.num === inv.current_phase ? 'active' : '';
+                const status = isComplete ? 'completed'
+                    : phase.num < inv.current_phase ? 'completed'
+                    : phase.num === inv.current_phase ? 'active' : '';
                 html += `<div class="phase-step ${status}">${phase.label}</div>`;
                 if (idx < phases.length - 1) {
                     html += '<div class="phase-arrow">→</div>';
@@ -1334,24 +1378,46 @@
             const description = document.getElementById('incidentDescription').value.trim();
             const severity = document.getElementById('severityLevel').value;
 
-            if (!description) return;
+            if (!description) {
+                alert('Please enter an incident description.');
+                return;
+            }
+
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            const originalText = submitBtn.textContent;
+            submitBtn.textContent = 'Starting...';
+            submitBtn.disabled = true;
 
             try {
-                const response = await fetch('/api/investigations', {
+                const params = new URLSearchParams({
+                    incident_description: description,
+                    severity: severity,
+                });
+                const response = await fetch(`/api/investigations?${params}`, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                    },
-                    body: `incident_description=${encodeURIComponent(description)}&severity=${encodeURIComponent(severity)}`,
                 });
 
                 if (response.ok) {
+                    const data = await response.json();
+                    // Add to local state immediately
+                    if (data.id) {
+                        state.investigations[data.id] = data;
+                        renderInvestigationsList();
+                    }
                     closeModal();
                     document.getElementById('incidentDescription').value = '';
                     document.getElementById('severityLevel').value = 'medium';
+                } else {
+                    const errorText = await response.text();
+                    console.error('Server error:', response.status, errorText);
+                    alert(`Failed to start investigation (HTTP ${response.status}): ${errorText}`);
                 }
             } catch (error) {
                 console.error('Error creating investigation:', error);
+                alert(`Connection error: ${error.message}`);
+            } finally {
+                submitBtn.textContent = originalText;
+                submitBtn.disabled = false;
             }
         });
 

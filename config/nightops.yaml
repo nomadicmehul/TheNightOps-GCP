@@ -4,7 +4,7 @@
 agent:
   # Supported models: gemini-3.1-pro (default), gemini-3-flash,
   #                   gemini-2.5-pro, gemini-2.5-flash, gemini-2.0-flash
-  model: gemini-3.1-pro
+  model: gemini-2.5-pro
   max_investigation_time: 300
   max_agent_turns: 20
   require_human_approval:
@@ -40,7 +40,7 @@ mcp_servers:
     endpoint: https://logging.googleapis.com/mcp
     project_id: "${GCP_PROJECT_ID}"
     auth: iam
-    enabled: true
+    enabled: true  # Set to false for LOCAL MODE
 
   gke:
     type: official
@@ -49,7 +49,7 @@ mcp_servers:
     cluster: "${GKE_CLUSTER_NAME}"
     location: "${GKE_CLUSTER_LOCATION}"
     auth: iam
-    enabled: true
+    enabled: true  # Set to false for LOCAL MODE
 
   # ── Grafana Official MCP (stdio transport via uvx mcp-grafana) ──
   #
