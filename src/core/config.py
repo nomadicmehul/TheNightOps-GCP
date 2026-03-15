@@ -237,25 +237,23 @@ class MetricsConfig(BaseSettings):
 # ── Agent Config ────────────────────────────────────────────────────
 
 
-# Supported Gemini models
+# Supported Gemini models (verified available in Gemini API)
 SUPPORTED_MODELS = [
-    # Gemini 3.x series (latest)
-    "gemini-3.1-pro",       # Most advanced reasoning model (Feb 2026)
-    "gemini-3-flash",       # Fast Gemini 3 variant
-    # Gemini 2.x series (stable)
-    "gemini-2.5-pro",       # Advanced reasoning, stable
-    "gemini-2.5-flash",     # Fast, proven stable
-    "gemini-2.0-flash",     # Previous generation
-    # Gemini 1.5 series (legacy)
-    "gemini-1.5-pro",
-    "gemini-1.5-flash",
+    # Gemini 3.x series (preview)
+    "gemini-3.1-pro-preview",  # Latest, most advanced
+    "gemini-3-pro-preview",    # Gemini 3 Pro preview
+    "gemini-3-flash-preview",  # Fast Gemini 3 variant
+    # Gemini 2.x series (stable/GA)
+    "gemini-2.5-pro",          # Advanced reasoning, stable
+    "gemini-2.5-flash",        # Fast, proven stable
+    "gemini-2.0-flash",        # Previous generation, reliable
 ]
 
 
 class AgentConfig(BaseSettings):
     """ADK agent configuration."""
 
-    model: str = "gemini-3.1-pro"
+    model: str = "gemini-3.1-pro-preview"
     max_investigation_time: int = 300  # seconds
     max_agent_turns: int = 20
     require_human_approval: list[str] = Field(

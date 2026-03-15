@@ -2,9 +2,9 @@
 # Copy to config/nightops.yaml and fill in your values.
 
 agent:
-  # Supported models: gemini-3.1-pro (default), gemini-3-flash,
-  #                   gemini-2.5-pro, gemini-2.5-flash, gemini-2.0-flash
-  model: gemini-3.1-pro
+  # Supported: gemini-3.1-pro-preview, gemini-3-pro-preview,
+  #   gemini-2.5-pro, gemini-2.5-flash, gemini-2.0-flash
+  model: gemini-3.1-pro-preview
   max_investigation_time: 300
   max_agent_turns: 20
   require_human_approval:
@@ -40,7 +40,7 @@ mcp_servers:
     endpoint: https://logging.googleapis.com/mcp
     project_id: "${GCP_PROJECT_ID}"
     auth: iam
-    enabled: true  # Set to false for LOCAL MODE
+    enabled: true # Set to false for LOCAL MODE
 
   gke:
     type: official
@@ -49,7 +49,7 @@ mcp_servers:
     cluster: "${GKE_CLUSTER_NAME}"
     location: "${GKE_CLUSTER_LOCATION}"
     auth: iam
-    enabled: true  # Set to false for LOCAL MODE
+    enabled: true # Set to false for LOCAL MODE
 
   # ── Grafana Official MCP (stdio transport via uvx mcp-grafana) ──
   #
@@ -80,7 +80,7 @@ mcp_servers:
     transport: sse
     host: "${NIGHTOPS_KUBERNETES_HOST}"
     port: 8002
-    enabled: false  # Enable for LOCAL MODE (disable gke above)
+    enabled: false # Enable for LOCAL MODE (disable gke above)
 
   cloud_logging:
     type: custom
@@ -88,7 +88,7 @@ mcp_servers:
     host: "${NIGHTOPS_CLOUD_LOGGING_HOST}"
     port: 8001
     project_id: "${GCP_PROJECT_ID}"
-    enabled: false  # Enable for LOCAL MODE (disable cloud_observability above)
+    enabled: false # Enable for LOCAL MODE (disable cloud_observability above)
 
   slack:
     type: custom
@@ -98,14 +98,14 @@ mcp_servers:
     bot_token: "${SLACK_BOT_TOKEN}"
     incident_channel: "#incidents"
     rca_channel: "#post-mortems"
-    enabled: false  # Optional — enable when SLACK_BOT_TOKEN is configured
+    enabled: false # Optional — enable when SLACK_BOT_TOKEN is configured
 
   notifications:
     type: custom
     transport: sse
     host: "${NIGHTOPS_NOTIFICATIONS_HOST}"
     port: 8005
-    enabled: false  # Optional — enable when notification credentials are configured
+    enabled: false # Optional — enable when notification credentials are configured
 
 # ── Multi-Cluster Support ──────────────────────────────────────
 # Uncomment and configure for multi-cluster environments.
@@ -191,4 +191,4 @@ proactive:
 metrics:
   enabled: true
   store_path: data/metrics
-  estimated_manual_mttr_seconds: 2700  # 45 min baseline
+  estimated_manual_mttr_seconds: 2700 # 45 min baseline
