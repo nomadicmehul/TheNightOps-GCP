@@ -4,9 +4,20 @@
 
 set -euo pipefail
 
-PROJECT_ID="${GCP_PROJECT_ID:?Set GCP_PROJECT_ID environment variable}"
-CLUSTER_NAME="${CLUSTER_NAME:-nightops-demo}"
-ZONE="${GCP_ZONE:-us-central1-a}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+ENV_FILE="${PROJECT_ROOT}/config/.env"
+
+# Auto-load config/.env if available
+if [[ -f "${ENV_FILE}" ]]; then
+    set -a
+    source "${ENV_FILE}"
+    set +a
+fi
+
+PROJECT_ID="${GCP_PROJECT_ID:?Set GCP_PROJECT_ID in config/.env or environment}"
+CLUSTER_NAME="${GKE_CLUSTER_NAME:-nightops-demo}"
+ZONE="${GKE_CLUSTER_LOCATION:-${GCP_ZONE:-us-central1-a}}"
 
 echo "TheNightOps — Cleanup"
 echo "====================="
@@ -16,10 +27,20 @@ echo "→ Removing demo namespace..."
 kubectl delete namespace nightops-demo --ignore-not-found=true
 echo "  ✓ Demo namespace removed"
 
-# Remove container images
-echo "→ Removing container images from GCR..."
-gcloud container images delete "gcr.io/${PROJECT_ID}/nightops-demo-api:latest" \
-    --quiet --force-delete-tags 2>/dev/null || true
+# Remove agent namespace
+echo "→ Removing NightOps agent namespace..."
+kubectl delete namespace nightops --ignore-not-found=true
+echo "  ✓ NightOps namespace removed"
+
+# Remove container images from Artifact Registry
+REGION="${GCP_REGION:-us-central1}"
+echo "→ Removing container images from Artifact Registry..."
+gcloud artifacts docker images delete \
+    "${REGION}-docker.pkg.dev/${PROJECT_ID}/thenightops/nightops-agent:latest" \
+    --quiet 2>/dev/null || true
+gcloud artifacts docker images delete \
+    "${REGION}-docker.pkg.dev/${PROJECT_ID}/thenightops/nightops-demo-api:latest" \
+    --quiet 2>/dev/null || true
 echo "  ✓ Images cleaned up"
 
 # Optionally delete cluster

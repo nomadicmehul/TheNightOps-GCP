@@ -25,7 +25,7 @@ class CloudObservabilityConfig(BaseSettings):
     """
 
     type: Literal["official"] = "official"
-    endpoint: str = "https://logging.googleapis.com/v2/mcp"
+    endpoint: str = "https://logging.googleapis.com/mcp"
     project_id: str = Field(default="", description="GCP project ID")
     auth: str = "iam"  # Uses Application Default Credentials
     enabled: bool = True
@@ -42,7 +42,7 @@ class GKEMCPConfig(BaseSettings):
     """
 
     type: Literal["official"] = "official"
-    endpoint: str = "https://container.googleapis.com/v1/mcp"
+    endpoint: str = "https://container.googleapis.com/mcp"
     project_id: str = Field(default="", description="GCP project ID")
     cluster: str = Field(default="", description="GKE cluster name")
     location: str = Field(default="", description="GKE cluster location (zone or region)")
@@ -142,7 +142,7 @@ class ClusterConfig(BaseSettings):
     location: str = ""
     environment: str = "production"  # production, staging, development
     criticality: str = "high"  # high, medium, low
-    gke_mcp_endpoint: str = "https://container.googleapis.com/v1/mcp"
+    gke_mcp_endpoint: str = "https://container.googleapis.com/mcp"
     enabled: bool = True
 
 
@@ -239,12 +239,13 @@ class MetricsConfig(BaseSettings):
 
 # Supported Gemini models
 SUPPORTED_MODELS = [
-    # Gemini 3.x series
-    "gemini-3.1-pro",
-    "gemini-3-flash",
-    # Gemini 2.x series
-    "gemini-2.5-flash",
-    "gemini-2.0-flash",
+    # Gemini 3.x series (latest)
+    "gemini-3.1-pro",       # Most advanced reasoning model (Feb 2026)
+    "gemini-3-flash",       # Fast Gemini 3 variant
+    # Gemini 2.x series (stable)
+    "gemini-2.5-pro",       # Advanced reasoning, stable
+    "gemini-2.5-flash",     # Fast, proven stable
+    "gemini-2.0-flash",     # Previous generation
     # Gemini 1.5 series (legacy)
     "gemini-1.5-pro",
     "gemini-1.5-flash",
@@ -254,7 +255,7 @@ SUPPORTED_MODELS = [
 class AgentConfig(BaseSettings):
     """ADK agent configuration."""
 
-    model: str = "gemini-2.5-flash"
+    model: str = "gemini-3.1-pro"
     max_investigation_time: int = 300  # seconds
     max_agent_turns: int = 20
     require_human_approval: list[str] = Field(
@@ -265,6 +266,17 @@ class AgentConfig(BaseSettings):
         ]
     )
     verbose: bool = False
+
+    @field_validator("model", mode="before")
+    @classmethod
+    def validate_model(cls, v: str) -> str:
+        """Warn if model is not in the supported list (non-blocking)."""
+        if v and v not in SUPPORTED_MODELS:
+            import logging
+            logging.getLogger(__name__).warning(
+                "Model '%s' not in SUPPORTED_MODELS list. Proceeding anyway.", v
+            )
+        return v
 
 
 # ── Root Config ─────────────────────────────────────────────────────

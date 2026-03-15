@@ -8,7 +8,7 @@ metadata:
 data:
   nightops.yaml: |
     agent:
-      model: gemini-2.5-flash
+      model: gemini-3.1-pro
       max_investigation_time: 300
       max_agent_turns: 20
       require_human_approval:
@@ -18,15 +18,16 @@ data:
       verbose: false
 
     mcp_servers:
+      # Official Google Cloud MCP (enabled for GKE deployments)
       cloud_observability:
         type: official
-        endpoint: https://logging.googleapis.com/v2/mcp
+        endpoint: https://logging.googleapis.com/mcp
         auth: iam
         enabled: true
 
       gke:
         type: official
-        endpoint: https://container.googleapis.com/v1/mcp
+        endpoint: https://container.googleapis.com/mcp
         auth: iam
         enabled: true
 
@@ -35,33 +36,34 @@ data:
         transport: stdio
         enabled: false
 
+      # Custom MCP servers (disabled when using official GCP MCP)
       kubernetes:
         type: custom
         transport: sse
         host: mcp-kubernetes
         port: 8002
-        enabled: true
+        enabled: false
 
       cloud_logging:
         type: custom
         transport: sse
         host: mcp-cloud-logging
         port: 8001
-        enabled: true
+        enabled: false
 
       slack:
         type: custom
         transport: sse
         host: mcp-slack
         port: 8004
-        enabled: true
+        enabled: false
 
       notifications:
         type: custom
         transport: sse
         host: mcp-notifications
         port: 8005
-        enabled: true
+        enabled: false
 
     webhook:
       enabled: true
@@ -108,17 +110,6 @@ data:
 
   remediation_policies.yaml: |
     policies:
-      silence_alert:
-        auto_approve_environments: ["*"]
-        blocked: false
-      create_grafana_incident:
-        auto_approve_environments: ["*"]
-        blocked: false
-      post_slack_update:
-        auto_approve_environments: ["*"]
-        conditions:
-          channels: ["#incidents"]
-        blocked: false
       restart_pod:
         auto_approve_environments: ["development", "staging"]
         require_approval_environments: ["production"]

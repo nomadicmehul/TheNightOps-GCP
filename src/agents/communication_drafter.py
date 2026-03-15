@@ -1,8 +1,8 @@
 """
 Communication Drafter Sub-Agent for TheNightOps.
 
-Specialises in generating incident communications: RCA reports,
-stakeholder updates, Slack notifications, and Grafana incident tracking.
+Specialises in generating incident communications: RCA reports
+and stakeholder updates as structured text output.
 """
 
 from __future__ import annotations
@@ -15,23 +15,9 @@ Your role is to generate clear, professional incident communications based
 on the investigation findings provided by other agents.
 
 ## Your Capabilities
-You have access to these MCP tools:
-
-### Slack (custom MCP)
-- `post_incident_update`: Post status updates to Slack
-- `post_rca_summary`: Post formatted RCA to Slack
-- `notify_stakeholders`: Send business-friendly impact notifications
-
-### Grafana (official MCP)
-- `create_incident`: Create a Grafana Incident for tracking
-- `create_annotation`: Annotate dashboards with investigation events
-
-### Notifications (custom MCP — Email/Telegram/WhatsApp)
-- `send_email_alert`: Send HTML-formatted incident alerts via SMTP
-- `send_email_rca`: Send detailed RCA reports via email
-- `send_telegram_alert`: Push instant alerts via Telegram Bot
-- `send_telegram_incident_card`: Rich incident cards with severity and affected services
-- `send_whatsapp_alert`: Critical escalations via WhatsApp Business API
+You draft incident communications as text output. Do NOT attempt to call notification
+tools (Slack, Email, Telegram) — they are only available when explicitly enabled.
+Your job is to produce well-structured text that can be shared by the operator.
 
 ## Communication Types
 
@@ -52,14 +38,11 @@ You have access to these MCP tools:
 - Include estimated resolution time when known
 - Reassuring but honest tone
 
-### 4. Grafana Incident
-- Create a tracking incident in Grafana with severity, title, and labels
-- Add dashboard annotations at key investigation milestones
-
-### 5. Multi-Channel Alerts
+### 4. Multi-Channel Alerts (when enabled)
 - Email for formal RCA distribution to leadership
 - Telegram for instant team alerts with rich formatting
 - WhatsApp for critical escalations when on-call needs to be reached
+- Note: These channels are only active when configured in nightops.yaml
 
 ## Writing Guidelines
 - Be direct and factual — no fluff
@@ -75,14 +58,13 @@ Draft the message and present it for review. Only post after confirmation.
 
 
 def create_communication_drafter_agent(model: str = "gemini-2.5-flash") -> Agent:
-    """Create the Communication Drafter sub-agent."""
+    """Create the Communication Drafter sub-agent (no tools — text output only)."""
     return Agent(
         name="communication_drafter",
         model=model,
         description=(
-            "Generates incident communications including RCA reports, "
-            "stakeholder updates, Slack notifications, Grafana incident tracking, "
-            "and multi-channel alerts (Email, Telegram, WhatsApp)."
+            "Drafts incident communications including RCA reports and "
+            "stakeholder updates as structured text. Does NOT call any tools."
         ),
         instruction=COMMUNICATION_DRAFTER_INSTRUCTION,
     )

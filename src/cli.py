@@ -279,7 +279,7 @@ def verify(
         checks.append(("Google Cloud SDK", False, "not found"))
 
     try:
-        result = subprocess.run(["kubectl", "version", "--client", "--short"], capture_output=True, text=True)
+        result = subprocess.run(["kubectl", "version", "--client"], capture_output=True, text=True)
         checks.append(("kubectl", result.returncode == 0, "installed"))
     except FileNotFoundError:
         checks.append(("kubectl", False, "not found"))
@@ -351,8 +351,10 @@ def mcp_start(
     config = _load_config(config_path)
 
     custom_servers = {
-        "slack": ("thenightops.src.mcp_servers.slack.server", config.slack.port),
-        "notifications": ("thenightops.src.mcp_servers.notifications.server", config.notifications.port),
+        "kubernetes": ("thenightops.mcp_servers.kubernetes.server", config.kubernetes.port),
+        "cloud_logging": ("thenightops.mcp_servers.cloud_logging.server", config.cloud_logging_custom.port),
+        "slack": ("thenightops.mcp_servers.slack.server", config.slack.port),
+        "notifications": ("thenightops.mcp_servers.notifications.server", config.notifications.port),
     }
 
     if all_servers:
@@ -367,7 +369,7 @@ def mcp_start(
     to_start = servers if all_servers else {server_name: servers.get(server_name)} if server_name else {}
 
     if not to_start:
-        rich_console.print("[red]Specify --all or a server name (slack, notifications)[/red]")
+        rich_console.print("[red]Specify --all or a server name (kubernetes, cloud_logging, slack, notifications)[/red]")
         raise typer.Exit(1)
 
     processes = []
@@ -403,12 +405,14 @@ def mcp_status() -> None:
     import httpx
 
     official_servers = {
-        "Cloud Observability": ("Google Cloud", "logging.googleapis.com/v2/mcp", "remote"),
-        "GKE": ("Google Cloud", "container.googleapis.com/v1/mcp", "remote"),
+        "Cloud Observability": ("Google Cloud", "logging.googleapis.com/mcp", "remote"),
+        "GKE": ("Google Cloud", "container.googleapis.com/mcp", "remote"),
         "Grafana": ("Grafana Labs", "uvx mcp-grafana", "stdio"),
     }
 
     custom_servers = {
+        "kubernetes": 8002,
+        "cloud_logging": 8001,
         "slack": 8004,
         "notifications": 8005,
     }
@@ -785,7 +789,7 @@ async def _run_single_investigation(config: NightOpsConfig, incident_description
         )
     )
 
-    dashboard_url = os.getenv("NIGHTOPS_DASHBOARD_URL", "http://dashboard:8888")
+    dashboard_url = os.getenv("NIGHTOPS_DASHBOARD_URL", "http://localhost:8888")
 
     try:
         result = await run_investigation(config, incident_description, dashboard_url=dashboard_url)

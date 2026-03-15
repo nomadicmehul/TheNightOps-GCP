@@ -12,12 +12,13 @@ LABEL com.docker.scout.policy="hardened"
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir fastapi uvicorn
+RUN pip install --no-cache-dir fastapi uvicorn psutil
 
 COPY scenarios/demo_app.py .
 
 # Run as non-root
-RUN groupadd -r demo && useradd -r -g demo -d /app -s /sbin/nologin demo
+RUN groupadd -r demo && useradd -r -g demo -d /app -s /sbin/nologin demo \
+    && chown -R demo:demo /app
 USER demo
 
 EXPOSE 8080

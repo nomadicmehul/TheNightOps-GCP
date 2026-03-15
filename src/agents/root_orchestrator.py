@@ -4,10 +4,11 @@ Root Orchestrator Agent for TheNightOps.
 The main agent that receives incidents and coordinates investigation
 across all sub-agents using Google ADK's multi-agent orchestration.
 
-Uses a hybrid MCP approach:
-- Google Cloud's official managed MCP servers for GKE and Cloud Observability
-- Official Grafana MCP (mcp-grafana) for alerting, dashboards, Prometheus, Loki, incidents, on-call
-- Custom self-hosted MCP servers for Slack and Notifications
+Uses custom MCP servers (SSE transport) for:
+- Kubernetes: pod status, logs, events, deployments, resource usage
+- Cloud Logging: log queries, error pattern detection, anomaly detection
+- Slack: incident notifications (optional)
+- Notifications: Email, Telegram, WhatsApp (optional)
 
 Enhanced with:
 - Anomaly Detector sub-agent for proactive monitoring
@@ -21,8 +22,10 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
+import google.auth
+import google.auth.transport.requests
 from google.adk.agents import Agent
-from google.adk.tools.mcp_tool import MCPToolset, SseConnectionParams, StdioConnectionParams
+from google.adk.tools.mcp_tool import McpToolset, SseConnectionParams, StdioConnectionParams
 from mcp import StdioServerParameters
 
 from thenightops.agents.communication_drafter import create_communication_drafter_agent
@@ -34,28 +37,70 @@ from thenightops.core.config import NightOpsConfig
 
 logger = logging.getLogger(__name__)
 
+
+def _create_gcp_header_provider(
+    project_id: str,
+    extra_headers: dict[str, str] | None = None,
+):
+    """Create a dynamic header provider that injects fresh GCP OAuth2 tokens.
+
+    Official Google Cloud MCP servers require IAM authentication via bearer tokens.
+    Tokens expire (~1 hour), so this provider refreshes them on each request.
+
+    Requires: gcloud auth application-default login (or Workload Identity on GKE)
+    """
+    def provider(context) -> dict[str, str]:
+        credentials, _ = google.auth.default(
+            scopes=["https://www.googleapis.com/auth/cloud-platform"]
+        )
+        credentials.refresh(google.auth.transport.requests.Request())
+        headers = {
+            "Authorization": f"Bearer {credentials.token}",
+            "x-goog-project-id": project_id,
+        }
+        if extra_headers:
+            headers.update(extra_headers)
+        return headers
+
+    return provider
+
 ROOT_ORCHESTRATOR_INSTRUCTION = """You are TheNightOps, an autonomous SRE agent that investigates
 and helps resolve production incidents. You coordinate a team of specialist agents.
 
 You operate on Google Cloud Platform and connect to infrastructure through
-Google Cloud's official managed MCP servers (for GKE and Cloud Observability),
-the official Grafana MCP (for alerting, dashboards, Prometheus, Loki, incidents, and on-call),
-and custom MCP servers (for Slack and multi-channel Notifications).
+custom MCP servers for Kubernetes, Cloud Logging, Slack, and multi-channel Notifications.
+
+## CRITICAL: Only Use Available Tools
+
+You MUST ONLY call tools from this exact list. Do NOT call any tool not listed here.
+Do NOT invent or guess tool names. If a tool is not in this list, it does not exist.
+
+### Kubernetes MCP Tools
+- `get_pod_status` — Get pod status in a namespace
+- `get_pod_logs` — Get logs from a specific pod
+- `get_events` — Get Kubernetes events in a namespace
+- `get_deployments` — List deployments in a namespace
+- `get_resource_usage` — Get resource usage for pods
+- `describe_pod` — Get detailed pod description
+
+### Cloud Logging MCP Tools
+- `query_logs` — Query Cloud Logging for log entries
+- `detect_error_patterns` — Detect error patterns in logs
+- `get_log_volume_anomalies` — Find log volume anomalies
+- `correlate_logs_by_trace` — Correlate logs by trace ID
+
+### Agent Transfer
+- `transfer_to_agent` — Delegate work to a sub-agent
 
 ## Your Sub-Agents
 
 You have five specialist agents you can delegate to:
 
-1. **log_analyst** — Analyses Cloud Logging via the official Google Cloud Observability MCP
-   for error patterns, anomalies, metrics, traces, and error groups
-2. **deployment_correlator** — Checks Kubernetes state via the official GKE MCP server
-   for recent deployments, pod health, events, and resource exhaustion
-3. **runbook_retriever** — Searches Grafana for alert history, past incidents, on-call
-   schedules, and dashboard correlations to find similar past patterns
-4. **communication_drafter** — Generates RCAs and stakeholder notifications via multiple
-   channels: Slack, Email (SMTP), Telegram Bot, and WhatsApp Business API
-5. **anomaly_detector** — Proactively monitors cluster health by checking pod status,
-   memory trends, error rates, and resource usage to detect anomalies early
+1. **log_analyst** — Analyses logs for error patterns, anomalies, and trace correlation
+2. **deployment_correlator** — Checks Kubernetes for recent deployments, pod health, events, and resource exhaustion
+3. **runbook_retriever** — Searches for alert history, past incidents, and similar patterns
+4. **communication_drafter** — Generates RCAs and stakeholder notifications via Slack, Email, Telegram, WhatsApp
+5. **anomaly_detector** — Proactively monitors cluster health by checking pod status, memory trends, error rates
 
 ## Historical Context
 
@@ -65,65 +110,41 @@ provides similar historical incidents, use that context to accelerate diagnosis:
 - If the pattern recurs, flag it as a recurring issue and recommend permanent fixes
 - Use historical MTTR as a benchmark for this investigation
 
-## Available Grafana MCP Tools
-
-Through the official Grafana MCP, you have access to:
-- `get_firing_alerts` / `list_alert_rules` — See what Grafana alerting thinks is wrong
-- `query_prometheus` — Execute PromQL queries for metrics analysis
-- `query_loki_logs` — Execute LogQL queries for log analysis
-- `search_dashboards` / `get_dashboard_by_uid` — Find and inspect relevant dashboards
-- `list_incidents` / `create_incident` — Manage Grafana Incidents
-- `get_current_oncall_users` / `list_schedules` — Check on-call schedules
-- `create_annotation` — Mark investigation events on dashboards
-- `silence_alert` — Silence alerts during active investigation
-
 ## Investigation Protocol
 
 When you receive an incident, follow this systematic approach:
 
 ### Phase 1: Initial Triage (Parallel)
-Delegate simultaneously to:
-- `log_analyst`: Check for log anomalies and error patterns via Cloud Observability MCP
-- `deployment_correlator`: Check recent deployments and pod health via GKE MCP
-- `runbook_retriever`: Check Grafana for firing alerts, alert history, past incidents,
-  and on-call information
-
-Additionally, use Grafana tools directly:
-- `get_firing_alerts`: Get all currently firing Grafana alerts
-- `query_prometheus`: Query key metrics (error rates, latency, saturation)
-- `create_annotation`: Mark investigation start on relevant dashboards
+Use these tools directly:
+- `get_pod_status`: Check pod health across relevant namespaces
+- `get_events`: Get recent Kubernetes events for anomalies
+- `get_deployments`: Check recent deployment changes
+- `query_logs`: Search for error patterns in logs
+- `detect_error_patterns`: Find error patterns automatically
 
 ### Phase 2: Deep Investigation
-Based on Phase 1 findings, direct specific follow-up investigations:
-- If deployment change detected → ask `deployment_correlator` to examine specific pods
-- If error patterns found → ask `log_analyst` to correlate by trace ID
-- If Grafana alerts point to specific service → use `query_prometheus` and `query_loki_logs`
-  to get targeted metrics and logs
-- If similar past incidents found → review past resolutions for applicable fixes
+Based on Phase 1 findings, perform targeted follow-up:
+- If deployment change detected → `describe_pod`, `get_pod_logs` on specific pods
+- If error patterns found → `correlate_logs_by_trace` to trace the issue
+- If resource issues → `get_resource_usage` to check CPU/memory
+- If OOMKill → `get_pod_logs` + `get_events` to confirm and find the cause
 
 ### Phase 3: Synthesis & Communication
 Once you have sufficient evidence:
 1. Synthesise all findings into a coherent diagnosis
 2. Determine root cause with confidence level
-3. Use `create_annotation` to mark root cause identified on dashboards
-4. Use `silence_alert` to silence noisy alerts related to the diagnosed issue
-5. Ask `communication_drafter` to:
-   - Post incident status update to Slack (#incidents)
-   - Draft an RCA summary for #post-mortems
-   - Notify stakeholders of business impact in plain language
-   - Create a Grafana Incident for tracking
+3. Present your findings in the output format below — do NOT attempt to call notification tools
 
 ### Phase 4: Remediation Recommendations
 Based on your analysis:
 - Suggest immediate actions (e.g., rollback deployment, restart pods)
 - Flag which actions can be auto-approved vs require human approval
 - Recommend long-term fixes to prevent recurrence
-- Create annotation with resolution summary
 
 ## Remediation Policy
 
 Actions are governed by graduated autonomy:
-- **Auto-approved**: Silencing alerts, creating Grafana incidents, posting to #incidents
+- **Auto-approved**: Creating incidents, posting to #incidents
 - **Environment-gated**: Pod restarts (auto in dev/staging, approval needed in prod)
 - **Always require approval**: Rollbacks, scaling changes, external notifications
 - **Blocked**: Namespace deletion, PVC deletion, cluster operations
@@ -160,30 +181,28 @@ Present your final analysis as:
 """
 
 
-def create_mcp_toolsets(config: NightOpsConfig) -> list[MCPToolset]:
+def create_mcp_toolsets(config: NightOpsConfig) -> list[McpToolset]:
     """Create MCP toolset connections for all configured servers.
 
-    Uses a hybrid approach:
-    - Official Google Cloud MCP servers connect via their managed SSE endpoints
-    - Official Grafana MCP connects via stdio (subprocess)
-    - Custom MCP servers connect via local SSE transport
+    Connects to custom MCP servers via SSE transport.
+    Also supports official Google Cloud MCP and Grafana MCP when enabled.
     """
     toolsets = []
 
-    # ── Official Google Cloud MCP Servers ────────────────────────
+    # ── Official Google Cloud MCP Servers (IAM-authenticated) ────
     if config.cloud_observability.enabled:
         logger.info(
-            "Connecting to official Cloud Observability MCP: %s (project: %s)",
+            "Connecting to Cloud Observability MCP: %s (project: %s)",
             config.cloud_observability.endpoint,
             config.cloud_observability.project_id,
         )
         toolsets.append(
-            MCPToolset(
+            McpToolset(
                 connection_params=SseConnectionParams(
                     url=config.cloud_observability.endpoint,
-                    headers={
-                        "x-goog-project-id": config.cloud_observability.project_id,
-                    },
+                ),
+                header_provider=_create_gcp_header_provider(
+                    config.cloud_observability.project_id,
                 ),
             )
         )
@@ -196,11 +215,13 @@ def create_mcp_toolsets(config: NightOpsConfig) -> list[MCPToolset]:
             config.gke.cluster,
         )
         toolsets.append(
-            MCPToolset(
+            McpToolset(
                 connection_params=SseConnectionParams(
                     url=config.gke.endpoint,
-                    headers={
-                        "x-goog-project-id": config.gke.project_id,
+                ),
+                header_provider=_create_gcp_header_provider(
+                    config.gke.project_id,
+                    extra_headers={
                         "x-gke-cluster": config.gke.cluster,
                         "x-gke-location": config.gke.location,
                     },
@@ -217,11 +238,13 @@ def create_mcp_toolsets(config: NightOpsConfig) -> list[MCPToolset]:
             cluster_config.location, cluster_config.name, cluster_config.environment,
         )
         toolsets.append(
-            MCPToolset(
+            McpToolset(
                 connection_params=SseConnectionParams(
                     url=cluster_config.gke_mcp_endpoint,
-                    headers={
-                        "x-goog-project-id": cluster_config.project_id,
+                ),
+                header_provider=_create_gcp_header_provider(
+                    cluster_config.project_id,
+                    extra_headers={
                         "x-gke-cluster": cluster_config.name,
                         "x-gke-location": cluster_config.location,
                     },
@@ -229,10 +252,10 @@ def create_mcp_toolsets(config: NightOpsConfig) -> list[MCPToolset]:
             )
         )
 
-    # ── Official Grafana MCP (stdio transport) ───────────────────
+    # ── Grafana MCP (stdio transport) ────────────────────────────
     if config.grafana.enabled:
         logger.info(
-            "Connecting to official Grafana MCP: %s (stdio via uvx mcp-grafana)",
+            "Connecting to Grafana MCP: %s (stdio via uvx mcp-grafana)",
             config.grafana.url,
         )
         grafana_args = ["mcp-grafana"]
@@ -240,7 +263,7 @@ def create_mcp_toolsets(config: NightOpsConfig) -> list[MCPToolset]:
             grafana_args.extend(["--enabled-tools", config.grafana.enabled_tools])
 
         toolsets.append(
-            MCPToolset(
+            McpToolset(
                 connection_params=StdioConnectionParams(
                     server_params=StdioServerParameters(
                         command="uvx",
@@ -263,7 +286,7 @@ def create_mcp_toolsets(config: NightOpsConfig) -> list[MCPToolset]:
             config.kubernetes.port,
         )
         toolsets.append(
-            MCPToolset(
+            McpToolset(
                 connection_params=SseConnectionParams(
                     url=f"http://{config.kubernetes.host}:{config.kubernetes.port}/sse",
                 ),
@@ -277,7 +300,7 @@ def create_mcp_toolsets(config: NightOpsConfig) -> list[MCPToolset]:
             config.cloud_logging_custom.port,
         )
         toolsets.append(
-            MCPToolset(
+            McpToolset(
                 connection_params=SseConnectionParams(
                     url=f"http://{config.cloud_logging_custom.host}:{config.cloud_logging_custom.port}/sse",
                 ),
@@ -291,7 +314,7 @@ def create_mcp_toolsets(config: NightOpsConfig) -> list[MCPToolset]:
             config.slack.port,
         )
         toolsets.append(
-            MCPToolset(
+            McpToolset(
                 connection_params=SseConnectionParams(
                     url=f"http://{config.slack.host}:{config.slack.port}/sse",
                 ),
@@ -305,7 +328,7 @@ def create_mcp_toolsets(config: NightOpsConfig) -> list[MCPToolset]:
             config.notifications.port,
         )
         toolsets.append(
-            MCPToolset(
+            McpToolset(
                 connection_params=SseConnectionParams(
                     url=f"http://{config.notifications.host}:{config.notifications.port}/sse",
                 ),
@@ -323,20 +346,21 @@ def create_root_orchestrator(
 
     Architecture:
     - Root Orchestrator coordinates 5 specialist sub-agents
-    - Sub-agents access tools via MCP (Google Cloud official + Grafana official + custom)
-    - All powered by Google ADK's multi-agent orchestration
+    - Sub-agents access tools via custom MCP servers (SSE transport)
+    - All powered by Google ADK's multi-agent orchestration + Gemini
     """
     model = config.agent.model
 
-    # Create sub-agents
-    log_analyst = create_log_analyst_agent(model=model)
-    deployment_correlator = create_deployment_correlator_agent(model=model)
-    runbook_retriever = create_runbook_retriever_agent(model=model)
-    communication_drafter = create_communication_drafter_agent(model=model)
-    anomaly_detector = create_anomaly_detector_agent(model=model)
-
-    # Create MCP toolsets (Google Cloud official + Grafana official + custom)
+    # Create MCP toolsets first (so sub-agents can use them)
     mcp_toolsets = create_mcp_toolsets(config)
+
+    # Create sub-agents — give investigation agents access to MCP tools
+    # Communication drafter has no tools (text output only)
+    log_analyst = create_log_analyst_agent(model=model, tools=list(mcp_toolsets))
+    deployment_correlator = create_deployment_correlator_agent(model=model, tools=list(mcp_toolsets))
+    runbook_retriever = create_runbook_retriever_agent(model=model, tools=list(mcp_toolsets))
+    communication_drafter = create_communication_drafter_agent(model=model)
+    anomaly_detector = create_anomaly_detector_agent(model=model, tools=list(mcp_toolsets))
 
     # Build the root orchestrator
     root_agent = Agent(
@@ -344,10 +368,9 @@ def create_root_orchestrator(
         model=model,
         description=(
             "TheNightOps — Autonomous SRE agent that investigates production "
-            "incidents by coordinating log analysis (via Cloud Observability MCP), "
-            "deployment correlation (via GKE MCP), alert & metric analysis (via Grafana MCP), "
+            "incidents by coordinating log analysis, deployment correlation, "
             "proactive anomaly detection, and stakeholder communication "
-            "(via Slack + multi-channel Notifications)."
+            "using custom Kubernetes and Cloud Logging MCP servers."
         ),
         instruction=ROOT_ORCHESTRATOR_INSTRUCTION,
         sub_agents=[
@@ -360,19 +383,13 @@ def create_root_orchestrator(
         tools=[*mcp_toolsets],
     )
 
-    official_count = sum([
-        config.cloud_observability.enabled,
-        config.gke.enabled,
-        config.grafana.enabled,
-    ])
-    custom_count = sum([config.slack.enabled, config.notifications.enabled])
+    toolset_count = len(mcp_toolsets)
     cluster_count = sum(1 for c in config.clusters if c.enabled)
 
     logger.info(
-        "Root orchestrator created with %d sub-agents, %d official MCP + %d custom MCP toolsets, %d extra clusters",
+        "Root orchestrator created with %d sub-agents, %d MCP toolsets, %d extra clusters",
         5,
-        official_count,
-        custom_count,
+        toolset_count,
         cluster_count,
     )
 

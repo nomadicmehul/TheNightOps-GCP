@@ -27,8 +27,11 @@ logger = logging.getLogger(__name__)
 server = Server("thenightops-cloud-logging")
 
 
-def _build_client(project_id: str) -> cloud_logging.Client:
-    """Create an authenticated Cloud Logging client."""
+def _build_client(project_id: str = "") -> cloud_logging.Client:
+    """Create an authenticated Cloud Logging client. Defaults to GCP_PROJECT_ID env var."""
+    import os
+    if not project_id:
+        project_id = os.environ.get("GCP_PROJECT_ID", "")
     return cloud_logging.Client(project=project_id)
 
 

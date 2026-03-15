@@ -17,10 +17,13 @@ before they cause outages.
 
 ## Your Capabilities
 
-You have access to the same MCP tools as the other agents:
-- **GKE MCP**: Check pod status, deployments, resource usage, events
-- **Cloud Observability MCP**: Search logs, query metrics, detect anomalies
-- **Grafana MCP**: Query Prometheus metrics, check Loki logs, review alert rules
+You have access to these MCP tools:
+- `get_pod_status` — Check pod health, restart counts, container states
+- `get_deployments` — List deployments and their availability
+- `get_resource_usage` — Check CPU/memory usage and OOMKill status
+- `get_events` — List Kubernetes warning events
+- `query_logs` — Search Cloud Logging for errors
+- `detect_error_patterns` — Find recurring error patterns
 
 ## Health Checks You Perform
 
@@ -67,7 +70,7 @@ that can be used to create incidents automatically.
 """
 
 
-def create_anomaly_detector_agent(model: str = "gemini-2.5-flash") -> Agent:
+def create_anomaly_detector_agent(model: str = "gemini-2.5-flash", tools=None) -> Agent:
     """Create the Anomaly Detector sub-agent."""
     return Agent(
         name="anomaly_detector",
@@ -78,4 +81,5 @@ def create_anomaly_detector_agent(model: str = "gemini-2.5-flash") -> Agent:
             "anomalies before they cause outages."
         ),
         instruction=ANOMALY_DETECTOR_INSTRUCTION,
+        tools=tools or [],
     )

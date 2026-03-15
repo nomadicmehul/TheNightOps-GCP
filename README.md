@@ -6,12 +6,11 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Google ADK](https://img.shields.io/badge/Google-ADK-4285F4.svg)](https://google.github.io/adk-python/)
 [![MCP](https://img.shields.io/badge/MCP-Remote-green.svg)](https://modelcontextprotocol.io/)
-[![Google Cloud MCP](https://img.shields.io/badge/Google%20Cloud-Official%20MCP-4285F4.svg)](https://docs.cloud.google.com/mcp/overview)
-[![Grafana MCP](https://img.shields.io/badge/Grafana-Official%20MCP-F46800.svg)](https://github.com/grafana/mcp-grafana)
+[![Gemini](https://img.shields.io/badge/Gemini-3.1--Pro-4285F4.svg)](https://ai.google.dev/)
 
 ---
 
-**TheNightOps** is an autonomous SRE agent built on [Google Agent Development Kit (ADK)](https://google.github.io/adk-python/) that connects to your existing observability stack through [Remote MCP servers](https://modelcontextprotocol.io/) — including [Google Cloud's official managed MCP servers](https://docs.cloud.google.com/mcp/overview) for GKE and Cloud Observability, and the [official Grafana MCP](https://github.com/grafana/mcp-grafana) for alerting, dashboards, Prometheus, and Loki. When an incident fires, it doesn't just notify — it **investigates, correlates, diagnoses, drafts an RCA, and communicates to stakeholders**, all before your on-call engineer finishes reading the Grafana alert.
+**TheNightOps** is an autonomous SRE agent built on [Google Agent Development Kit (ADK)](https://google.github.io/adk-python/) and powered by **Gemini 3.1 Pro**. It connects to your Kubernetes clusters and Google Cloud infrastructure through [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) servers — including **official Google Cloud MCP** for GKE and Cloud Logging. When an incident fires, it doesn't just notify — it **investigates, correlates, diagnoses, drafts an RCA, and recommends remediation**, all before your on-call engineer finishes reading the alert.
 
 ---
 
@@ -71,11 +70,11 @@ The traditional answer has been more tooling, more dashboards, more alerting rul
 
 ## Architecture
 
-TheNightOps is built on two key open standards: [Google ADK](https://google.github.io/adk-python/) for multi-agent orchestration and [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) for tool integration — leveraging **official MCP servers** from Google Cloud and Grafana Labs where available, so you're building on production-grade infrastructure, not brittle custom integrations.
+TheNightOps is built on two key open standards: [Google ADK](https://google.github.io/adk-python/) for multi-agent orchestration and [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) for tool integration.
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                     TheNightOps Agent (ADK)                       │
+│                  TheNightOps Agent (ADK + Gemini 3.1 Pro)         │
 │                                                                  │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────┐    │
 │  │   Log    │  │ Deploy   │  │ Runbook  │  │ Communication│    │
@@ -83,61 +82,30 @@ TheNightOps is built on two key open standards: [Google ADK](https://google.gith
 │  └────┬─────┘  └────┬─────┘  └────┬─────┘  └──────┬───────┘    │
 │       │              │             │                │            │
 │  ┌────┴──────────────┴─────────────┴────────────────┴─────────┐  │
-│  │                  Root Orchestrator Agent                      │  │
+│  │            Root Orchestrator + Anomaly Detector              │  │
 │  └──────────────────────────┬──────────────────────────────────┘  │
 └─────────────────────────────┼─────────────────────────────────────┘
                               │ MCP Protocol
-       ┌──────────────────────┼──────────────────────┐
-       │                      │                      │
-┌──────┴──────┐  ┌────────────┴────────────┐  ┌──────┴──────┐
-│  Google     │  │   Google    │  Grafana  │  │   Slack     │
-│  Cloud      │  │   GKE      │   MCP     │  │    MCP      │
-│Observability│  │   MCP      │ (official │  │  (custom)   │
-│  MCP        │  │  (official)│  stdio)   │  └─────────────┘
-│ (official)  │  └────────────┴───────────┘         │
-└─────────────┘                              ┌──────┴──────┐
-                                             │Notifications│
-       Official MCP Servers                  │    MCP      │
-  Google Cloud (remote, IAM auth)            │  (custom)   │
-  Grafana Labs (stdio, token auth)           └─────────────┘
+              ┌───────────────┼───────────────┐
+              │               │               │
+       ┌──────┴──────┐ ┌─────┴──────┐ ┌──────┴──────┐
+       │   GKE MCP   │ │   Cloud    │ │   Slack /   │
+       │  (official)  │ │Observability│ │Notifications│
+       │ container.   │ │  (official) │ │  (optional) │
+       │ googleapis   │ │ logging.   │ │             │
+       │  .com/mcp   │ │ googleapis │ │ Email       │
+       │             │ │  .com/mcp  │ │ Telegram    │
+       └─────────────┘ └────────────┘ └─────────────┘
+         Official Google Cloud MCP (IAM auth, zero infrastructure)
 ```
 
 ### Three Layers
 
 | Layer | Role | Components |
 |-------|------|------------|
-| **MCP Tool Servers** | The "hands" | Cloud Observability (official), GKE (official), Grafana (official), Slack (custom), Notifications — Email/Telegram/WhatsApp (custom) |
-| **ADK Agent Orchestration** | The "brain" | Root Agent + 4 specialist sub-agents powered by Gemini |
-| **Human-in-the-Loop** | The "guardrails" | Approval required for destructive actions (restarts, rollbacks, external notifications) |
-
-### Why Google Cloud Official MCP Servers?
-
-TheNightOps uses Google Cloud's **officially managed remote MCP servers** for GKE and Cloud Observability rather than custom implementations:
-
-- **GKE MCP Server** ([docs](https://docs.cloud.google.com/kubernetes-engine/docs/how-to/use-gke-mcp) | [github](https://github.com/GoogleCloudPlatform/gke-mcp)) — Agents interact with GKE and Kubernetes APIs through a structured, discoverable interface. No more parsing brittle `kubectl` text output.
-- **Cloud Observability MCP** ([docs](https://docs.cloud.google.com/logging/docs/reference/v2/mcp)) — Search logs, view metrics, return traces, and view error reports through Google's managed MCP endpoint with enterprise IAM authentication.
-
-Benefits over custom MCP servers:
-- **IAM authentication** — No shared API keys; agents access only what's explicitly authorised
-- **Audit logging** — Every query and action logged in Cloud Audit Logs
-- **Managed infrastructure** — Google maintains the servers; you focus on the agent logic
-- **Production-grade reliability** — Same SLAs as the underlying Google Cloud services
-
-### Why Official Grafana MCP?
-
-TheNightOps uses the **official Grafana MCP** ([github](https://github.com/grafana/mcp-grafana)) from Grafana Labs — the same team that builds Grafana. It runs as a stdio subprocess via `uvx mcp-grafana` and provides:
-
-- **Alerting** — List firing alerts, alert rules, contact points, and create silences
-- **Dashboards** — Search, inspect, and annotate dashboards
-- **Prometheus** — Execute PromQL queries for metric analysis
-- **Loki** — Execute LogQL queries for log analysis
-- **Incidents** — Create and manage Grafana Incidents
-- **On-Call** — View schedules and current on-call users
-- **Annotations** — Mark investigation events directly on dashboards
-
-This is a massive upgrade over custom alerting integrations — Grafana is the observability UI most open-source teams already use, and the official MCP gives the agent direct access to everything the SRE would normally check manually.
-
-Custom MCP servers are used for Slack and multi-channel Notifications (Email/Telegram/WhatsApp), where no official MCP exists.
+| **MCP Tool Servers** | The "hands" | Official GKE MCP, Cloud Observability MCP, + custom Slack/Notifications (optional) |
+| **ADK Agent Orchestration** | The "brain" | Root Agent + 5 specialist sub-agents powered by Gemini 3.1 Pro |
+| **Human-in-the-Loop** | The "guardrails" | Approval required for destructive actions (restarts, rollbacks) |
 
 ---
 
@@ -148,98 +116,91 @@ Custom MCP servers are used for Slack and multi-channel Notifications (Email/Tel
 - Python 3.11+
 - Google Cloud SDK (`gcloud`) with an active project
 - A GKE cluster (for live demo)
-- Grafana instance (OSS, Cloud, or Enterprise) with a service account token
+- Google AI API key (for Gemini)
 - Slack bot token (optional)
-- Google Cloud MCP servers enabled ([setup guide](https://docs.cloud.google.com/mcp/overview))
-- `uv` installed (`pip install uv`) for `uvx mcp-grafana`
+- Docker (for building images)
 
 ### Installation
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/thenightops.git
+git clone https://github.com/nomadicmehul/thenightops.git
 cd thenightops
 
-# Install dependencies
+# Create virtualenv and install
+python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-# Run the interactive setup wizard
-nightops init
-# → Configures GCP, Grafana, notification channels, agent model
-# → Generates config/.env automatically
-
-# Or configure manually
+# Configure
 cp config/.env.example config/.env
+# Edit config/.env — set GOOGLE_API_KEY and GCP_PROJECT_ID
 
-# Enable Google Cloud MCP servers
-gcloud services enable logging.googleapis.com
-gcloud services enable container.googleapis.com
+# Authenticate with GCP
+gcloud auth application-default login
 
 # Verify setup
 nightops verify
 ```
 
-### Run the Demo
+### Run Locally
 
 ```bash
-# 1. Deploy the demo application to GKE
-nightops demo deploy
+# One command to start everything (dashboard + agent with official GCP MCP)
+bash scripts/run-local.sh
 
-# 2. Start custom MCP servers (Slack + Notifications)
-nightops mcp start --all
+# Or use local custom MCP servers (no GCP project needed)
+bash scripts/run-local.sh --local
 
-# 3. Open the real-time investigation dashboard
-nightops dashboard
-
-# 4. Trigger an incident scenario
-nightops demo trigger --scenario memory-leak
-
-# 5. Watch TheNightOps investigate and resolve
-nightops agent run --interactive
+# Open http://localhost:8888 for the live investigation dashboard
 ```
 
-### Conference Live Demo
+### Deploy to GKE
 
 ```bash
-# Interactive step-by-step demo for presentations (GKE required)
-./scripts/demo-live.sh
+# Full setup + demo (creates cluster, builds images, deploys, triggers scenario)
+./scripts/demo-gke.sh
 
-# Local-only demo without GKE (Docker Compose)
-./scripts/demo-local.sh
+# Specific scenario
+./scripts/demo-gke.sh --scenario cpu-spike
+
+# Quick redeploy (skip cluster setup and image build)
+./scripts/demo-gke.sh --skip-setup --skip-build
 ```
 
 ---
 
 ## MCP Servers
 
-TheNightOps uses a hybrid approach: **official MCP servers** from Google Cloud and Grafana Labs for core observability, Kubernetes, alerting, and metrics, and **custom MCP servers** for communication integrations.
+TheNightOps supports two MCP modes:
 
-### Google Cloud Observability MCP (Official)
-Google's managed MCP server for Cloud Logging, Cloud Monitoring, Cloud Trace, and Error Reporting. Provides enterprise-grade log querying, metric analysis, distributed tracing, and error pattern detection — all authenticated via IAM.
+### GCP Mode (Default) — Official Google Cloud MCP
 
-**Tools available:** `search_logs`, `get_metrics`, `get_traces`, `get_error_groups`, `get_log_volume_anomalies`
+Uses Google's managed remote MCP servers. Zero infrastructure to manage — just IAM authentication.
 
-### GKE MCP Server (Official)
-Google's managed MCP server for Google Kubernetes Engine. Inspects pod status, reads events, checks resource utilisation, reviews deployments, and retrieves container logs — without requiring `kubectl` access.
+| Server | Endpoint | What It Does |
+|--------|----------|--------------|
+| **GKE MCP** | `container.googleapis.com/mcp` | Pods, deployments, events, logs, resources |
+| **Cloud Observability MCP** | `logging.googleapis.com/mcp` | Log queries, error patterns, anomalies, traces |
 
-**Tools available:** `get_pod_status`, `get_pod_logs`, `get_events`, `get_deployments`, `describe_pod`, `get_resource_usage`
+**Setup:**
+```bash
+gcloud auth application-default login
+gcloud beta services mcp enable container.googleapis.com --project=$GCP_PROJECT_ID
+```
 
-### Grafana MCP (Official — mcp-grafana)
-The official MCP server from Grafana Labs ([github](https://github.com/grafana/mcp-grafana)). Runs as a stdio subprocess via `uvx mcp-grafana`. Provides the agent with full access to Grafana's alerting, dashboards, Prometheus, Loki, incidents, on-call schedules, and annotations.
+### Local Mode (`--local`) — Custom MCP Servers
 
-**Key tools:** `list_alert_rules`, `query_prometheus`, `query_loki_logs`, `search_dashboards`, `get_dashboard_by_uid`, `list_incidents`, `create_incident`, `get_current_oncall_users`, `create_annotation`, `silence_alert`, `list_contact_points`
+Self-hosted MCP servers with SSE transport. No GCP project needed.
 
-### Slack MCP Server (Custom)
-Posts incident updates to channels, sends formatted RCA summaries, notifies stakeholders with business-friendly language, and manages incident communication threads.
+| Server | Port | Tools |
+|--------|------|-------|
+| **Kubernetes MCP** | 8002 | `get_pod_status`, `get_pod_logs`, `get_events`, `get_deployments`, `describe_pod`, `get_resource_usage` |
+| **Cloud Logging MCP** | 8001 | `query_logs`, `detect_error_patterns`, `get_log_volume_anomalies`, `correlate_logs_by_trace` |
 
-### Notifications MCP Server (Custom)
-Multi-channel alerting for teams and stakeholders who aren't on Slack:
+### Optional Servers
 
-- **Email (SMTP)** — Formal RCA reports, stakeholder notifications, HTML-formatted incident summaries with CC/BCC support
-- **Telegram Bot** — Instant team alerts with rich incident cards, severity indicators, and affected service lists
-- **WhatsApp Business API** — Critical on-call escalations when engineers need to be reached on their personal device
-
-**Tools available:** `send_email_alert`, `send_email_rca`, `send_telegram_alert`, `send_telegram_incident_card`, `send_whatsapp_alert`
+- **Slack MCP** (port 8004) — Posts incident updates, RCA summaries, stakeholder notifications
+- **Notifications MCP** (port 8005) — Email (SMTP), Telegram Bot, WhatsApp Business API
 
 ---
 
@@ -265,85 +226,34 @@ The dashboard is built on FastAPI + WebSocket and requires no external dependenc
 
 ---
 
-## Interactive Setup Wizard
-
-After cloning the repo, run the setup wizard to configure everything interactively:
-
-```bash
-nightops init
-```
-
-The wizard walks through:
-
-1. **Google Cloud Platform** — Project ID, GKE cluster name/location, Google AI API key
-2. **Grafana** — Instance URL, service account token
-3. **Notification Channels** — Slack, Email (SMTP), Telegram Bot, WhatsApp Business API
-4. **Agent Configuration** — Gemini model selection (2.0-flash, 1.5-pro, 1.5-flash)
-
-It validates GCP connectivity, checks required APIs, and generates `config/.env` automatically.
-
----
-
-## Docker Security
-
-TheNightOps uses Docker best practices for production-grade container security:
-
-### Docker Hardened Images (DHI)
-All Dockerfiles use multi-stage builds with minimal runtime images, following [Docker Hardened Images](https://www.docker.com/blog/docker-hardened-images-for-every-developer/) principles — up to 95% fewer CVEs compared to community images.
-
-### Docker Scout Integration
-Scan all project images for vulnerabilities:
-
-```bash
-# Quick CVE scan
-docker scout cves thenightops:latest
-
-# Full scan with fix recommendations
-./scripts/docker-scout-scan.sh --fix
-
-# Compare with Docker Hardened Image alternatives
-./scripts/docker-scout-scan.sh --compare-hardened
-```
-
-Use **Docker Desktop** → Images tab for a visual security dashboard.
-
-### Security Features in Dockerfiles
-- Multi-stage builds (build dependencies don't ship to production)
-- Non-root user execution (`nightops` user)
-- OCI labels for Docker Scout policy evaluation
-- Health checks for container orchestration
-- Minimal `apt` packages (only `curl` and `ca-certificates`)
-
 ---
 
 ## Agent Architecture
 
-TheNightOps uses Google ADK's multi-agent orchestration to coordinate parallel investigation:
+TheNightOps uses Google ADK's multi-agent orchestration to coordinate parallel investigation with 5 specialist sub-agents:
 
-- **Root Orchestrator** — Receives incidents, coordinates investigation across sub-agents, synthesises findings, and makes decisions
-- **Log Analyst Agent** — Specialises in Cloud Logging pattern analysis, anomaly detection, and trace correlation using the official Cloud Observability MCP
-- **Deployment Correlator Agent** — Checks recent deployments, pod health, Kubernetes events, and resource exhaustion using the official GKE MCP
-- **Runbook Retriever Agent** — Queries Grafana for firing alerts, alert history, past incidents, on-call information, and dashboard correlations
-- **Communication Drafter Agent** — Generates RCAs, creates Grafana Incidents, sends Slack updates, and multi-channel stakeholder notifications (Email, Telegram, WhatsApp)
+- **Root Orchestrator** — Receives incidents, coordinates investigation, synthesises findings, and recommends remediation
+- **Log Analyst** — Cloud Logging pattern analysis, anomaly detection, and trace correlation
+- **Deployment Correlator** — Kubernetes deployments, pod health, events, and resource exhaustion
+- **Runbook Retriever** — Historical incident patterns, event timelines, and past resolutions
+- **Communication Drafter** — Generates structured RCA reports and stakeholder updates
+- **Anomaly Detector** — Proactive monitoring: CrashLoopBackOff, OOMKill, memory trends, error rates
 
 ### Investigation Flow
 
 ```
-Incident Received
+Incident Received (webhook / K8s event / proactive detection)
       │
       ├──→ Log Analyst (parallel)         ──→ Error patterns, anomalies, traces
       ├──→ Deployment Correlator (parallel) ──→ Recent changes, pod health, events
-      └──→ Runbook Retriever (parallel)    ──→ Grafana alerts, past incidents, dashboards
+      └──→ Runbook Retriever (parallel)    ──→ Historical patterns, past resolutions
       │
       ▼
 Root Orchestrator synthesises findings
       │
-      ▼
-Communication Drafter generates:
-  ├── Grafana Incident (tracking + annotations)
-  ├── Slack incident update (#incidents)
-  ├── RCA summary (#post-mortems)
-  └── Multi-channel notifications (Email/Telegram/WhatsApp)
+      ├── Root Cause Analysis with confidence level
+      ├── Immediate remediation actions (auto-approve vs needs approval)
+      └── Long-term recommendations
       │
       ▼
 Human approves any destructive actions
@@ -362,7 +272,7 @@ Each scenario simulates a real-world incident pattern. Deploy to GKE, trigger th
 | | |
 |---|---|
 | **What happens** | A deployment introduces a memory leak. Pods gradually consume memory until they hit the 256Mi limit and are OOMKilled. Pods restart but immediately begin leaking again, creating CrashLoopBackOff. Downstream services start failing. |
-| **What TheNightOps does** | Detects OOMKilled events via GKE MCP → correlates with recent deployment version change → identifies memory trending upward → finds restart count increasing → drafts RCA pointing to the new image version → recommends rollback |
+| **What TheNightOps does** | Detects OOMKilled events via Kubernetes MCP → correlates with recent deployment version change → identifies memory trending upward → finds restart count increasing → drafts RCA pointing to the new image version → recommends rollback |
 | **Trigger** | `nightops demo trigger -s memory-leak` |
 
 ### Scenario 2: CPU Spike from Bad Query
@@ -372,7 +282,7 @@ Each scenario simulates a real-world incident pattern. Deploy to GKE, trigger th
 | | |
 |---|---|
 | **What happens** | A specific API endpoint (`/api/reports/generate`) consumes excessive CPU due to an unoptimised computation. CPU throttling causes high latency on ALL endpoints, not just the problematic one. Timeouts cascade. |
-| **What TheNightOps does** | Identifies CPU at limits via GKE MCP → finds error logs pointing to specific endpoint via Cloud Observability MCP → correlates with recent deployment change → recommends disabling the endpoint and increasing CPU limits |
+| **What TheNightOps does** | Identifies CPU at limits via Kubernetes MCP → finds error logs pointing to specific endpoint via Cloud Logging MCP → correlates with recent deployment change → recommends disabling the endpoint and increasing CPU limits |
 | **Trigger** | `nightops demo trigger -s cpu-spike` |
 
 ### Scenario 3: Database Connection Pool Exhaustion
@@ -392,7 +302,7 @@ Each scenario simulates a real-world incident pattern. Deploy to GKE, trigger th
 | | |
 |---|---|
 | **What happens** | A misconfigured environment variable causes 50% of requests to `/api/data` to fail with 500 errors. The error rate looks like "normal noise" for 15 minutes before crossing the alert threshold. |
-| **What TheNightOps does** | Detects error rate spike via Cloud Observability MCP → correlates timing with recent environment variable change via GKE MCP → identifies exact config key that changed → recommends reverting the config |
+| **What TheNightOps does** | Detects error rate spike via Cloud Logging MCP → correlates timing with recent environment variable change via Kubernetes MCP → identifies exact config key that changed → recommends reverting the config |
 | **Trigger** | `nightops demo trigger -s config-drift` |
 
 ### Scenario 5: Aggressive OOMKill
@@ -402,7 +312,7 @@ Each scenario simulates a real-world incident pattern. Deploy to GKE, trigger th
 | | |
 |---|---|
 | **What happens** | Aggressive memory allocation consumes available memory within seconds. Kubernetes OOMKills the pod immediately. Pod restarts, allocates again, OOMKilled again — instant CrashLoopBackOff. Unlike the slow memory leak, this one is visible to everyone within 30 seconds. |
-| **What TheNightOps does** | Instantly detects OOMKill event via GKE MCP → checks memory limits vs actual usage → identifies the allocation pattern in logs → correlates with deployment change → recommends immediate rollback with higher memory limits |
+| **What TheNightOps does** | Instantly detects OOMKill event via Kubernetes MCP → checks memory limits vs actual usage → identifies the allocation pattern in logs → correlates with deployment change → recommends immediate rollback with higher memory limits |
 | **Trigger** | `nightops demo trigger -s oom-kill` |
 
 ---
@@ -412,42 +322,38 @@ Each scenario simulates a real-world incident pattern. Deploy to GKE, trigger th
 ```yaml
 # config/nightops.yaml
 agent:
-  model: gemini-2.0-flash
-  max_investigation_time: 300  # seconds
+  model: gemini-3.1-pro   # or gemini-2.5-flash for stable/fast
+  max_investigation_time: 300
   require_human_approval:
     - pod_restart
     - deployment_rollback
-    - external_notification
 
+# GCP MODE (default): Official Google Cloud MCP
 mcp_servers:
-  # Google Cloud Official MCP Servers (managed, IAM-authenticated)
   cloud_observability:
     type: official
-    endpoint: https://logging.googleapis.com/v2/mcp
-    project_id: ${GCP_PROJECT_ID}
-    auth: iam  # Uses Application Default Credentials
+    endpoint: https://logging.googleapis.com/mcp
+    auth: iam
+    enabled: true          # Disable for LOCAL mode
+
   gke:
     type: official
-    endpoint: https://container.googleapis.com/v1/mcp
-    project_id: ${GCP_PROJECT_ID}
-    cluster: ${GKE_CLUSTER_NAME}
-    location: ${GKE_CLUSTER_LOCATION}
+    endpoint: https://container.googleapis.com/mcp
     auth: iam
+    enabled: true          # Disable for LOCAL mode
 
-  # Grafana Official MCP (stdio via uvx mcp-grafana)
-  grafana:
-    type: official
-    transport: stdio
-    url: ${GRAFANA_URL}
-    service_account_token: ${GRAFANA_SERVICE_ACCOUNT_TOKEN}
-
-  # Custom MCP Servers (self-hosted)
-  slack:
+  # LOCAL MODE: Custom MCP servers (enable these, disable official above)
+  kubernetes:
     type: custom
-    transport: sse
     host: localhost
-    port: 8004
-    bot_token: ${SLACK_BOT_TOKEN}
+    port: 8002
+    enabled: false         # Enable for LOCAL mode
+
+  cloud_logging:
+    type: custom
+    host: localhost
+    port: 8001
+    enabled: false         # Enable for LOCAL mode
 ```
 
 ---
@@ -468,35 +374,33 @@ mcp_servers:
 ## CLI Reference
 
 ```bash
+# Quick Start
+bash scripts/run-local.sh                  # GCP mode (official MCP)
+bash scripts/run-local.sh --local          # Local mode (custom MCP servers)
+
 # Setup & Configuration
 nightops init                              # Interactive setup wizard
 nightops verify                            # Check all dependencies and configuration
 
 # MCP Servers
-nightops mcp start --all                   # Start all custom MCP servers
-nightops mcp start slack                  # Start specific server
-nightops mcp start notifications          # Start Email/Telegram/WhatsApp server
+nightops mcp start --all                   # Start all enabled MCP servers
+nightops mcp start kubernetes             # Start specific server
 nightops mcp status                        # Check all MCP server status
 
 # Dashboard
 nightops dashboard                         # Launch real-time investigation dashboard
 nightops dashboard --port 9000             # Custom port
 
-# Demo
-nightops demo deploy                       # Deploy demo app to GKE
-nightops demo trigger -s memory-leak      # Trigger scenario
-nightops demo trigger -s oom-kill         # Aggressive OOMKill scenario
-nightops demo reset                        # Reset to clean state
-
 # Agent
+nightops agent watch                       # Autonomous watch mode (production)
 nightops agent run --interactive           # Interactive investigation mode
 nightops agent run --incident "pod OOMKilled"  # Direct investigation
-nightops agent run --debug --verbose       # Debug mode
 
-# Conference Demo Scripts
-./scripts/demo-live.sh                     # Interactive live demo (GKE)
-./scripts/demo-local.sh                    # Local Docker demo (no GKE)
-./scripts/docker-scout-scan.sh             # Scan images for CVEs
+# GKE Demo
+./scripts/demo-gke.sh                     # Full GKE demo (setup + build + deploy)
+./scripts/demo-gke.sh --scenario cpu-spike # Specific scenario
+./scripts/demo-gke.sh --skip-setup --skip-build  # Quick redeploy
+./scripts/cleanup.sh                       # Teardown resources
 ```
 
 ## Development
@@ -519,26 +423,23 @@ docker compose up -d
 
 ## Roadmap
 
-- [x] Google Cloud Observability MCP (official) integration
-- [x] GKE MCP (official) integration
-- [x] Grafana MCP (official — mcp-grafana) — alerting, dashboards, Prometheus, Loki, incidents, on-call
-- [x] Slack MCP server (custom)
-- [x] Notifications MCP server — Email (SMTP), Telegram Bot, WhatsApp Business API
-- [x] Multi-agent investigation with ADK
-- [x] 4 demo scenarios with GKE simulation
-- [x] Docker Hardened Images + Docker Scout integration
-- [x] Interactive setup wizard (`nightops init`)
+- [x] Custom Kubernetes MCP server (pod status, events, deployments, logs, resource usage)
+- [x] Custom Cloud Logging MCP server (log queries, error patterns, anomaly detection)
+- [x] Multi-agent investigation with Google ADK + Gemini 3.1 Pro
+- [x] 5 demo scenarios with GKE simulation
+- [x] Proactive anomaly detection (CrashLoopBackOff, OOMKill, memory trends)
+- [x] TF-IDF incident memory for historical pattern matching
+- [x] Graduated remediation (auto-approve → env-gated → always-approve → blocked)
 - [x] Real-time investigation dashboard (WebSocket streaming)
-- [x] Conference live demo scripts (GKE + local Docker)
-- [x] Enhanced demo app with 6 failure modes + Prometheus metrics
+- [x] One-command GKE demo (`demo-gke.sh`)
+- [x] Slack MCP server (optional)
+- [x] Notifications MCP server — Email, Telegram, WhatsApp (optional)
+- [x] Google Cloud official MCP server integration (GKE + Cloud Observability)
+- [ ] Grafana MCP integration (mcp-grafana)
 - [ ] Jira MCP server for ticket creation
-- [ ] Confluence/Wiki MCP for runbook retrieval
-- [ ] Learning from past incidents to improve diagnosis accuracy
 - [ ] Auto-remediation with approval workflows
 - [ ] Multi-cluster support
-- [ ] PagerDuty MCP server (optional integration)
-- [ ] Cost-impact analysis agent
-- [ ] gRPC transport support (following Google's MCP contribution)
+- [ ] Learning from past incidents to improve diagnosis accuracy
 
 ---
 
@@ -564,9 +465,8 @@ Apache 2.0 — See [LICENSE](LICENSE) for details.
 ## Acknowledgements
 
 - [Google Agent Development Kit (ADK)](https://google.github.io/adk-python/)
-- [Google Cloud Official MCP Servers](https://docs.cloud.google.com/mcp/overview)
-- [Grafana MCP (mcp-grafana)](https://github.com/grafana/mcp-grafana)
 - [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)
+- [Google Cloud](https://cloud.google.com/) — GKE, Cloud Logging
 - The Kubernetes community for documenting real-world failure patterns
 - Every SRE who has written a 3 AM post-mortem
 

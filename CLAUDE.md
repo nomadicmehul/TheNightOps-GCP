@@ -3,7 +3,7 @@
 ## Project Overview
 
 **TheNightOps** — Autonomous SRE Agent for Kubernetes, built on Google ADK and Gemini.
-- **Version:** 0.2.0
+- **Version:** 0.3.0
 - **License:** Apache 2.0
 - **Python:** 3.11+
 - **Package manager:** pip with hatchling build backend
@@ -22,10 +22,15 @@ Multi-agent system using Google ADK for orchestration and MCP (Model Context Pro
 - **Anomaly Detector** (`src/agents/anomaly_detector.py`) — Proactive anomaly detection
 
 ### MCP Servers
+**Official Google Cloud MCP (default for GCP/demo):**
+- **GKE MCP** — `https://container.googleapis.com/mcp` (IAM auth via `header_provider`)
+- **Cloud Observability MCP** — `https://logging.googleapis.com/mcp` (IAM auth via `header_provider`)
+
+**Custom MCP Servers (for `--local` mode):**
 - **Kubernetes** (`src/mcp_servers/kubernetes/server.py`) — Pod status, events, deployments, logs
 - **Cloud Logging** (`src/mcp_servers/cloud_logging/server.py`) — GCP log queries
-- **Slack** (`src/mcp_servers/slack/server.py`) — Incident notifications
-- **Notifications** (`src/mcp_servers/notifications/server.py`) — Email (SMTP), Telegram, WhatsApp
+- **Slack** (`src/mcp_servers/slack/server.py`) — Incident notifications (disabled)
+- **Notifications** (`src/mcp_servers/notifications/server.py`) — Email/Telegram/WhatsApp (disabled)
 
 ### Core Modules
 - **Config** (`src/core/config.py`) — Pydantic settings, loads from `config/.env` and `config/nightops.yaml`
@@ -106,7 +111,12 @@ Templates in `deploy/gke/` use placeholders (`AGENT_IMAGE`, `DEMO_IMAGE`). Runni
 `config/.env` is the single source of truth for secrets and environment-specific values. `config/nightops.yaml` holds agent behavior config. The `src/core/config.py` module loads both using Pydantic settings.
 
 ### Default Model
-The default Gemini model is `gemini-2.5-flash` (set in `src/core/config.py`).
+The default Gemini model is `gemini-3.1-pro` (set in `src/core/config.py`).
+Supported: `gemini-3.1-pro`, `gemini-3-flash`, `gemini-2.5-pro`, `gemini-2.5-flash`, `gemini-2.0-flash`
+
+### MCP Modes
+- **GCP mode** (default): Official Google Cloud MCP servers (`container.googleapis.com/mcp`, `logging.googleapis.com/mcp`). Requires IAM setup.
+- **Local mode** (`--local`): Custom self-hosted MCP servers on ports 8001/8002. No GCP project needed.
 
 ## Development Commands
 
@@ -114,6 +124,10 @@ The default Gemini model is `gemini-2.5-flash` (set in `src/core/config.py`).
 # Install
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
+
+# Quick Start (auto-creates venv if missing)
+bash scripts/run-local.sh           # GCP mode (official MCP)
+bash scripts/run-local.sh --local   # Local mode (custom MCP servers)
 
 # Tests
 pytest tests/ -v

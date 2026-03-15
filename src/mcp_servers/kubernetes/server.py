@@ -28,11 +28,14 @@ server = Server("thenightops-kubernetes")
 
 
 def _load_kube_config(context: str = "", in_cluster: bool = False) -> None:
-    """Load Kubernetes configuration."""
+    """Load Kubernetes configuration. Auto-detects in-cluster environment."""
     if in_cluster:
         config.load_incluster_config()
     else:
-        config.load_kube_config(context=context if context else None)
+        try:
+            config.load_incluster_config()
+        except config.ConfigException:
+            config.load_kube_config(context=context if context else None)
 
 
 def _get_core_api() -> client.CoreV1Api:

@@ -167,29 +167,40 @@ fi
 if [[ "$SKIP_BUILD" == true ]]; then
     banner "Step 2/7: Build Images [SKIPPED]"
 else
-    banner "Step 2/7: Building & Pushing Container Images"
+    banner "Step 2/7: Building & Pushing Container Images (multi-arch)"
 
     # Configure Docker for Artifact Registry
     step "Configuring Docker for Artifact Registry..."
     gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet 2>/dev/null
     ok "Docker configured"
 
-    # Build agent image
-    step "Building agent image..."
-    docker build -t "${AGENT_IMAGE}" -f "${PROJECT_ROOT}/Dockerfile" "${PROJECT_ROOT}" --quiet
-    ok "Agent image built"
+    # Ensure buildx builder exists for multi-platform builds
+    step "Setting up Docker buildx for multi-platform builds..."
+    if ! docker buildx inspect nightops-builder &>/dev/null; then
+        docker buildx create --name nightops-builder --use --bootstrap
+    else
+        docker buildx use nightops-builder
+    fi
+    ok "Buildx ready (linux/amd64 + linux/arm64)"
 
-    step "Pushing agent image..."
-    docker push "${AGENT_IMAGE}" --quiet 2>/dev/null || docker push "${AGENT_IMAGE}"
+    # Build + push agent image (multi-arch)
+    step "Building & pushing agent image (amd64 + arm64)..."
+    docker buildx build \
+        --platform linux/amd64,linux/arm64 \
+        -t "${AGENT_IMAGE}" \
+        -f "${PROJECT_ROOT}/Dockerfile" \
+        "${PROJECT_ROOT}" \
+        --push
     ok "Agent image pushed → ${AGENT_IMAGE}"
 
-    # Build demo app image
-    step "Building demo app image..."
-    docker build -t "${DEMO_IMAGE}" -f "${PROJECT_ROOT}/demo/Dockerfile" "${PROJECT_ROOT}/demo/" --quiet
-    ok "Demo app image built"
-
-    step "Pushing demo app image..."
-    docker push "${DEMO_IMAGE}" --quiet 2>/dev/null || docker push "${DEMO_IMAGE}"
+    # Build + push demo app image (multi-arch)
+    step "Building & pushing demo app image (amd64 + arm64)..."
+    docker buildx build \
+        --platform linux/amd64,linux/arm64 \
+        -t "${DEMO_IMAGE}" \
+        -f "${PROJECT_ROOT}/demo/Dockerfile" \
+        "${PROJECT_ROOT}/demo/" \
+        --push
     ok "Demo app image pushed → ${DEMO_IMAGE}"
 fi
 
