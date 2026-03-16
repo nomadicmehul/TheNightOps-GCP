@@ -389,10 +389,30 @@ async def run_simple_investigation(
         except Exception as exc:
             logger.warning("Failed to push event: %s", exc)
 
+    # ── Intelligence Layer: Find similar historical incidents ────
+    historical_context = ""
+    if config.intelligence.enabled:
+        try:
+            from thenightops.intelligence.incident_memory import IncidentMemory
+            memory = IncidentMemory(config.intelligence)
+            similar = memory.find_similar(incident_description)
+            if similar:
+                historical_context = "\n\n## Historical Context (Similar Past Incidents)\n"
+                for s in similar:
+                    historical_context += (
+                        f"\n- **{s.title}** (similarity: {s.similarity_score:.0%})\n"
+                        f"  Root cause: {s.root_cause}\n"
+                        f"  Resolution: {s.resolution}\n"
+                        f"  MTTR: {s.mttr_seconds:.0f}s\n"
+                    )
+                logger.info("Found %d similar historical incidents", len(similar))
+        except Exception:
+            logger.debug("Incident memory not available, proceeding without history")
+
     # Build message
     user_message = types.Content(
         role="user",
-        parts=[types.Part(text=f"INCIDENT RECEIVED:\n\n{incident_description}")],
+        parts=[types.Part(text=f"INCIDENT RECEIVED:\n\n{incident_description}{historical_context}")],
     )
 
     results: list[str] = []
