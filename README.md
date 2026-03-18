@@ -7,6 +7,7 @@
 [![Google ADK](https://img.shields.io/badge/Google-ADK-4285F4.svg)](https://google.github.io/adk-python/)
 [![MCP](https://img.shields.io/badge/MCP-Remote-green.svg)](https://modelcontextprotocol.io/)
 [![Gemini](https://img.shields.io/badge/Gemini-3.1--Pro--Preview-4285F4.svg)](https://ai.google.dev/)
+[![Beta](https://img.shields.io/badge/status-🧪_beta-blueviolet)](https://github.com/nomadicmehul/thenightops/)
 
 ---
 
