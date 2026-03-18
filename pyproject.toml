@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "thenightops"
-version = "0.3.0"
+dynamic = ["version"]
 description = "Autonomous SRE Agent built on Google ADK and Remote MCP — with proactive detection, incident memory, and graduated remediation"
 readme = "README.md"
 license = "Apache-2.0 WITH Commons-Clause-1.0"
@@ -56,6 +56,9 @@ demo = [
 
 [project.scripts]
 nightops = "thenightops.cli:app"
+
+[tool.hatch.version]
+path = "src/__init__.py"
 
 [tool.hatch.build.targets.wheel.force-include]
 "src" = "thenightops"
