@@ -18,6 +18,8 @@ import logging
 from pathlib import Path
 from typing import Any, Optional
 
+from importlib.resources import files as pkg_files
+
 import yaml
 
 from nightops.core.models import RemediationAction, RemediationPolicy, Severity
@@ -140,6 +142,24 @@ class PolicyEngine:
         """Load policies from a YAML file, merging with defaults."""
         policy_file = Path(path)
         if not policy_file.exists():
+            # If the consuming project doesn't ship the config file, try
+            # loading it from the packaged defaults.
+            try:
+                packaged = pkg_files("nightops") / path
+                if packaged.is_file():
+                    data = yaml.safe_load(packaged.read_text()) or {}
+                    policies = data.get("policies", {})
+                    for action_type, policy_data in policies.items():
+                        self._policies[action_type] = policy_data
+                    logger.info(
+                        "Loaded %d remediation policies from packaged default %s",
+                        len(policies),
+                        path,
+                    )
+                    return
+            except Exception:
+                pass
+
             logger.info("No policy file at %s, using defaults", path)
             return
 

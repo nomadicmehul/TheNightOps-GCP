@@ -7,6 +7,8 @@ import re
 from pathlib import Path
 from typing import Literal, Optional
 
+from importlib.resources import files as pkg_files
+
 import yaml
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
@@ -368,6 +370,32 @@ class NightOpsConfig(BaseSettings):
         return cls(**data)
 
     @classmethod
+    def from_yaml_text(cls, raw: str) -> NightOpsConfig:
+        """Load configuration from YAML text with environment variable substitution.
+
+        This is used for packaged-in defaults where there is no filesystem path
+        alongside the YAML file (so we can't load an adjacent `config/.env`).
+        """
+        # Substitute environment variables (${VAR_NAME} syntax)
+        for key, value in os.environ.items():
+            raw = raw.replace(f"${{{key}}}", value)
+
+        # Replace any remaining unresolved ${VAR} references with empty string
+        raw = re.sub(r"\$\{[A-Za-z_][A-Za-z0-9_]*\}", "", raw)
+
+        data = yaml.safe_load(raw) or {}
+
+        # Handle nested mcp_servers key if present in YAML
+        if "mcp_servers" in data:
+            mcp = data.pop("mcp_servers")
+            # Map YAML key cloud_logging → cloud_logging_custom to avoid conflict
+            if "cloud_logging" in mcp:
+                mcp["cloud_logging_custom"] = mcp.pop("cloud_logging")
+            data.update(mcp)
+
+        return cls(**data)
+
+    @classmethod
     def load(cls, config_path: Optional[str | Path] = None) -> NightOpsConfig:
         """Load config from file or use defaults with environment variables."""
         if config_path and Path(config_path).exists():
@@ -377,6 +405,15 @@ class NightOpsConfig(BaseSettings):
         for default_path in ["config/nightops.yaml", "nightops.yaml"]:
             if Path(default_path).exists():
                 return cls.from_yaml(default_path)
+
+        # Fall back to packaged defaults (so consuming projects don't need to ship config/)
+        try:
+            packaged = pkg_files("nightops") / "config" / "nightops.yaml"
+            if packaged.is_file():
+                return cls.from_yaml_text(packaged.read_text())
+        except Exception:
+            # Best-effort fallback only; remaining logic uses env vars/defaults.
+            pass
 
         # Fall back to environment variables and defaults
         project_id = os.getenv("GCP_PROJECT_ID", "")
