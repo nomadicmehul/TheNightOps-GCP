@@ -2,14 +2,54 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
+
+from importlib.resources import files as pkg_files
 
 import yaml
-from pydantic import Field, field_validator
+from pydantic import Field, ValidationError, field_validator
 from pydantic_settings import BaseSettings
+
+logger = logging.getLogger(__name__)
+
+
+def _coerce_yaml_root(data: object) -> dict[str, Any]:
+    """Normalize yaml.safe_load output: None/empty document -> {}, require a mapping."""
+    if data is None:
+        return {}
+    if not isinstance(data, dict):
+        raise ValueError(f"YAML root must be a mapping, got {type(data).__name__}")
+    return data
+
+
+def _merge_mcp_servers_block(data: dict[str, Any]) -> None:
+    """Inline `mcp_servers:` into flat fields; map cloud_logging -> cloud_logging_custom."""
+    if "mcp_servers" not in data:
+        return
+    mcp = data.pop("mcp_servers")
+    if not isinstance(mcp, dict):
+        raise ValueError("mcp_servers must be a mapping")
+    if "cloud_logging" in mcp:
+        mcp["cloud_logging_custom"] = mcp.pop("cloud_logging")
+    data.update(mcp)
+
+
+def _parse_yaml_config_text(raw: str) -> dict[str, Any]:
+    """Substitute `${VAR}` from the environment, parse YAML, normalize `mcp_servers`.
+
+    Shared by `from_yaml` (after optional `config/.env` load) and `from_yaml_text`
+    (packaged defaults with no adjacent `.env`).
+    """
+    for key, value in os.environ.items():
+        raw = raw.replace(f"${{{key}}}", value)
+    raw = re.sub(r"\$\{[A-Za-z_][A-Za-z0-9_]*\}", "", raw)
+    data = _coerce_yaml_root(yaml.safe_load(raw))
+    _merge_mcp_servers_block(data)
+    return data
 
 
 # ── Official Google Cloud MCP Server Configs ────────────────────────
@@ -375,24 +415,16 @@ class NightOpsConfig(BaseSettings):
         with open(path) as f:
             raw = f.read()
 
-        # Substitute environment variables (${VAR_NAME} syntax)
-        for key, value in os.environ.items():
-            raw = raw.replace(f"${{{key}}}", value)
+        return cls(**_parse_yaml_config_text(raw))
 
-        # Replace any remaining unresolved ${VAR} references with empty string
-        raw = re.sub(r"\$\{[A-Za-z_][A-Za-z0-9_]*\}", "", raw)
+    @classmethod
+    def from_yaml_text(cls, raw: str) -> NightOpsConfig:
+        """Load configuration from YAML text with environment variable substitution.
 
-        data = yaml.safe_load(raw)
-
-        # Handle nested mcp_servers key if present in YAML
-        if "mcp_servers" in data:
-            mcp = data.pop("mcp_servers")
-            # Map YAML key cloud_logging → cloud_logging_custom to avoid conflict
-            if "cloud_logging" in mcp:
-                mcp["cloud_logging_custom"] = mcp.pop("cloud_logging")
-            data.update(mcp)
-
-        return cls(**data)
+        This is used for packaged-in defaults where there is no filesystem path
+        alongside the YAML file (so we can't load an adjacent `config/.env`).
+        """
+        return cls(**_parse_yaml_config_text(raw))
 
     @classmethod
     def load(cls, config_path: Optional[str | Path] = None) -> NightOpsConfig:
@@ -404,6 +436,31 @@ class NightOpsConfig(BaseSettings):
         for default_path in ["config/nightops.yaml", "nightops.yaml"]:
             if Path(default_path).exists():
                 return cls.from_yaml(default_path)
+
+        try:
+            packaged = pkg_files("nightops") / "config" / "nightops.yaml"
+        except ModuleNotFoundError as exc:
+            logger.warning(
+                "Could not resolve packaged config nightops/config/nightops.yaml: %s",
+                exc,
+            )
+        else:
+            if packaged.is_file():
+                try:
+                    return cls.from_yaml_text(packaged.read_text())
+                except (
+                    FileNotFoundError,
+                    IsADirectoryError,
+                    OSError,
+                    UnicodeDecodeError,
+                    yaml.YAMLError,
+                    ValueError,
+                    ValidationError,
+                ) as exc:
+                    logger.warning(
+                        "Failed to load packaged default config nightops.yaml: %s",
+                        exc,
+                    )
 
         # Fall back to environment variables and defaults
         project_id = os.getenv("GCP_PROJECT_ID", "")

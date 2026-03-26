@@ -18,6 +18,8 @@ import logging
 from pathlib import Path
 from typing import Any, Optional
 
+from importlib.resources import files as pkg_files
+
 import yaml
 
 from nightops.core.models import RemediationAction, RemediationPolicy, Severity
@@ -140,6 +142,47 @@ class PolicyEngine:
         """Load policies from a YAML file, merging with defaults."""
         policy_file = Path(path)
         if not policy_file.exists():
+            try:
+                packaged = pkg_files("nightops") / path
+            except ModuleNotFoundError as exc:
+                logger.warning(
+                    "Could not resolve packaged remediation policies path %s: %s",
+                    path,
+                    exc,
+                )
+                logger.info("No policy file at %s, using defaults", path)
+                return
+
+            if packaged.is_file():
+                try:
+                    data = yaml.safe_load(packaged.read_text()) or {}
+                    policies = data.get("policies", {})
+                    for action_type, policy_data in policies.items():
+                        self._policies[action_type] = policy_data
+                    logger.info(
+                        "Loaded %d remediation policies from packaged default %s",
+                        len(policies),
+                        path,
+                    )
+                    return
+                except (
+                    ModuleNotFoundError,
+                    FileNotFoundError,
+                    IsADirectoryError,
+                    OSError,
+                    UnicodeDecodeError,
+                    yaml.YAMLError,
+                    ValueError,
+                    TypeError,
+                    AttributeError,
+                ) as exc:
+                    logger.warning(
+                        "Failed to load packaged default remediation policies from %s: %s",
+                        path,
+                        exc,
+                    )
+                    return
+
             logger.info("No policy file at %s, using defaults", path)
             return
 
