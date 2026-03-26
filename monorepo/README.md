@@ -43,8 +43,7 @@ From the `TheNightOps` project root (this repo):
 
 ### Step 1: Build artifacts
 ```bash
-cd "/Users/suchitraswain/Documents/google/TheNightOps"
-
+# from the TheNightOps repository root
 python3 -m pip install -U pip build twine
 python3 -m build
 ```
