@@ -1,10 +1,10 @@
 # Monorepo Layout (Local Workspace)
 
-This repo is already packaged as a Python distribution named `nightops` (see `/Users/suchitraswain/Documents/google/TheNightOps/pyproject.toml`).
+This repo is already packaged as a Python distribution named `nightops` (see `pyproject.toml` at the **repository root**).
 
 To let you use it inside a monorepo without moving your existing code, we created this local workspace folder:
 
-- `monorepo/packages/nightops` is a symlink to the existing `TheNightOps` project root.
+- `monorepo/packages/nightops` is a symlink to the repository root (parent of `monorepo/`).
 
 ## Setup
 
@@ -39,7 +39,12 @@ For additional Python packages, create new folders under `monorepo/packages/<you
 
 ## Publish `nightops` (so other repos can install it)
 
-From the `TheNightOps` project root (this repo):
+From the **repository root** (the directory that contains `pyproject.toml`). You can `cd` there explicitly, or:
+
+```bash
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+```
 
 ### Step 1: Build artifacts
 ```bash
@@ -112,18 +117,27 @@ other-repo/
 ```
 
 ### Step 2: Run
+From the other project’s root (adjust paths if your layout differs):
+
 ```bash
-nightops verify --config /absolute/path/to/other-repo/config/nightops.yaml
+nightops verify --config ./config/nightops.yaml
 
 nightops agent run --simple \
   --incident "pod OOMKilled" \
-  --config /absolute/path/to/other-repo/config/nightops.yaml
+  --config ./config/nightops.yaml
+```
+
+Or pass an explicit path (works from any working directory):
+
+```bash
+OTHER_REPO="/path/to/your/other/project"   # set to your checkout
+nightops verify --config "$OTHER_REPO/config/nightops.yaml"
 ```
 
 ### Step 3: Optional: run watch mode
 ```bash
 nightops agent watch --simple \
-  --config /absolute/path/to/other-repo/config/nightops.yaml
+  --config ./config/nightops.yaml
 ```
 
 ---

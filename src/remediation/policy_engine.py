@@ -144,7 +144,17 @@ class PolicyEngine:
         if not policy_file.exists():
             try:
                 packaged = pkg_files("nightops") / path
-                if packaged.is_file():
+            except ModuleNotFoundError as exc:
+                logger.warning(
+                    "Could not resolve packaged remediation policies path %s: %s",
+                    path,
+                    exc,
+                )
+                logger.info("No policy file at %s, using defaults", path)
+                return
+
+            if packaged.is_file():
+                try:
                     data = yaml.safe_load(packaged.read_text()) or {}
                     policies = data.get("policies", {})
                     for action_type, policy_data in policies.items():
@@ -155,8 +165,23 @@ class PolicyEngine:
                         path,
                     )
                     return
-            except Exception:
-                pass
+                except (
+                    ModuleNotFoundError,
+                    FileNotFoundError,
+                    IsADirectoryError,
+                    OSError,
+                    UnicodeDecodeError,
+                    yaml.YAMLError,
+                    ValueError,
+                    TypeError,
+                    AttributeError,
+                ) as exc:
+                    logger.warning(
+                        "Failed to load packaged default remediation policies from %s: %s",
+                        path,
+                        exc,
+                    )
+                    return
 
             logger.info("No policy file at %s, using defaults", path)
             return

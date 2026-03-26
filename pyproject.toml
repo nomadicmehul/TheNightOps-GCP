@@ -61,6 +61,14 @@ nightops = "nightops.cli:app"
 "src" = "nightops"
 "config" = "nightops/config"
 
+# Ensure sdist contains `src/` and `config/` so `pip install` from sdist can build a wheel
+# with the packaged YAML defaults (nightops/config/*.yaml).
+[tool.hatch.build.targets.sdist]
+include = [
+    "src",
+    "config",
+]
+
 [tool.ruff]
 target-version = "py311"
 line-length = 100
